@@ -13,27 +13,27 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 // DESIGN SYSTEM
 // ═══════════════════════════════════════════════════════════════════════════
 const C = {
-  // Backgrounds
-  bg:          "#0A0908",
-  bgRaised:    "#121110",
-  bgSunken:    "#070605",
+  // Backgrounds (preto oficial #1A1A1A)
+  bg:          "#1A1A1A",
+  bgRaised:    "#222020",
+  bgSunken:    "#0F0F0F",
   // Cards
-  card:        "#161412",
-  card2:       "#1F1C19",
-  cardHover:   "#221F1B",
-  // Borders
-  border:      "#2A2622",
-  borderHi:    "#3A3530",
-  // Text
-  fg:          "#F2EDE4",
+  card:        "#1F1C19",
+  card2:       "#2A2622",
+  cardHover:   "#2D2925",
+  // Borders (marrom oficial #2A2218)
+  border:      "#2A2218",
+  borderHi:    "#3D342A",
+  // Text (creme oficial #F5F0E8)
+  fg:          "#F5F0E8",
   fgMuted:     "#A39A8C",
   muted:       "#6B6258",
   faded:       "#3F3A33",
-  // Brand
-  gold:        "#C9982A",
-  goldBright:  "#E0B445",
-  goldDim:     "rgba(224, 180, 69, 0.12)",
-  goldFaint:   "rgba(224, 180, 69, 0.06)",
+  // Brand (ouro oficial #D4A844)
+  gold:        "#B8902F",
+  goldBright:  "#D4A844",
+  goldDim:     "rgba(212, 168, 68, 0.12)",
+  goldFaint:   "rgba(212, 168, 68, 0.06)",
   // Status
   green:       "#5BAF6F",
   greenDim:    "rgba(91, 175, 111, 0.15)",
@@ -391,9 +391,9 @@ function Logo({ scale = 1 }) {
   return (
     <svg width={Math.round(VW * scale)} height={Math.round(VH * scale)} viewBox={"0 0 " + VW + " " + VH} style={{ display: "block", overflow: "visible" }}>
       {bars.map((b, i) => <rect key={i} x={b.x} y={VH - b.bh} width={5} height={b.bh} rx="1.5" fill={C.goldBright} opacity={b.op} />)}
-      <text y="23" fontFamily="Georgia, 'Times New Roman', serif" fontSize="20" fontWeight="700" letterSpacing="0.5">
-        <tspan x="46" fill={C.fg}>FADE</tspan>
-        <tspan fill={C.goldBright}>IN</tspan>
+      <text y="23" fontFamily="-apple-system, 'Segoe UI', Roboto, sans-serif" fontSize="19" fontWeight="700" letterSpacing="1.5">
+        <tspan x="48" fill={C.fg}>FADE</tspan>
+        <tspan dx="3" fill={C.goldBright}>IN</tspan>
       </text>
     </svg>
   );
@@ -404,7 +404,7 @@ function Logo({ scale = 1 }) {
 // ═══════════════════════════════════════════════════════════════════════════
 function Btn({ children, onClick, v = "primary", sm, icon, disabled, full, type = "button", title }) {
   const styles = {
-    primary: { background: C.goldBright, color: "#0A0908", border: "none" },
+    primary: { background: C.goldBright, color: "#1A1A1A", border: "none" },
     ghost:   { background: "transparent", color: C.fg, border: "1px solid " + C.border },
     soft:    { background: C.card2, color: C.fg, border: "1px solid " + C.border },
     danger:  { background: C.redDim, color: C.red, border: "1px solid " + C.red + "30" },
@@ -532,7 +532,7 @@ function Toggle({ on, onToggle }) {
 
 function Toast({ msg, type = "ok" }) {
   if (!msg) return null;
-  const cfg = type === "ok" ? { bg: C.goldBright, fg: "#0A0908" }
+  const cfg = type === "ok" ? { bg: C.goldBright, fg: "#1A1A1A" }
             : type === "err" ? { bg: C.red, fg: "#fff" }
             : { bg: C.green, fg: "#fff" };
   return (
@@ -973,7 +973,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
   const [toast, setToast]         = useState({ msg: "", type: "ok" });
   const [viewMode, setViewMode]   = useState("strip");
   const [calMonth, setCalMonth]   = useState({ y: BASE_DATE.getFullYear(), m: BASE_DATE.getMonth() });
-  const [form, setForm]           = useState({ client: "", phone: "", serviceId: "1", barberId: "", time: "" });
+  const [form, setForm]           = useState({ client: "", phone: "", serviceId: "", barberId: "", time: "" });
   const [clientSugg, setClientSugg] = useState(false);
   const stripRef = useRef(null);
 
@@ -1007,7 +1007,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
   , [appts, selDate, barberF, statusF]);
 
   const dateIsPast = isPast(selDate);
-  const selSvc  = services.find(s => s.id === parseInt(form.serviceId));
+  const selSvc  = services.find(s => s.id === form.serviceId);
   const avSlots = useMemo(() =>
     selSvc ? getAvailableSlots(appts, selDate, form.barberId, selSvc.duration) : []
   , [selSvc, appts, selDate, form.barberId]);
@@ -1023,7 +1023,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
     if (dateIsPast) return;
     const first = avSlots[0] || HOURS[0];
     setEditing(null);
-    setForm({ client: "", phone: "", serviceId: "1", barberId: barbers[0]?.id || "", time: first });
+    setForm({ client: "", phone: "", serviceId: services[0]?.id || "", barberId: barbers[0]?.id || "", time: first });
     setModal(true);
   }
 
@@ -1044,7 +1044,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
       if (key === "serviceId" || key === "barberId") {
         const svcId = key === "serviceId" ? val : next.serviceId;
         const bId   = key === "barberId"  ? val : next.barberId;
-        const svc   = services.find(s => s.id === parseInt(svcId));
+        const svc   = services.find(s => s.id === svcId);
         const sl    = getAvailableSlots(appts, selDate, bId, svc ? svc.duration : 30);
         // Mantém o horário se ainda disponível; senão escolhe o primeiro
         next.time = sl.includes(next.time) ? next.time : (sl[0] || "");
@@ -1063,7 +1063,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
     if (!trimmedClient) { flash("Digite o nome do cliente", "err"); return; }
     if (!form.time)     { flash("Selecione um horário",        "err"); return; }
 
-    const svc    = services.find(s => s.id === parseInt(form.serviceId));
+    const svc    = services.find(s => s.id === form.serviceId);
     const barber = barbers.find(b => b.id === form.barberId);
 
     if (editing) {
@@ -1935,7 +1935,7 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients,
                         display: "flex", alignItems: "center", justifyContent: "center",
                         fontSize: 11, fontWeight: 700,
                         background: active ? C.goldBright : done ? C.goldDim : C.bgSunken,
-                        color: active ? "#0A0908" : done ? C.goldBright : C.muted,
+                        color: active ? "#1A1A1A" : done ? C.goldBright : C.muted,
                         border: "1px solid " + (active ? C.goldBright : done ? C.goldBright + "40" : C.border),
                       }}>{done ? "✓" : i + 1}</div>
                       <span style={{ fontSize: 9, color: active ? C.goldBright : C.fgMuted, fontWeight: 500 }}>{labels[i]}</span>
@@ -2063,7 +2063,7 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients,
               <button onClick={confirm} disabled={!clientName.trim()} style={{
                 width: "100%", padding: 14, borderRadius: 10, border: "none",
                 background: clientName.trim() ? C.goldBright : C.faded,
-                color: clientName.trim() ? "#0A0908" : C.muted,
+                color: clientName.trim() ? "#1A1A1A" : C.muted,
                 fontSize: 14, fontWeight: 700,
                 cursor: clientName.trim() ? "pointer" : "not-allowed",
               }}>Confirmar agendamento</button>
@@ -2590,7 +2590,7 @@ function Comissoes({ txns, appts, services, setServices, barbers }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
-function Config({ shop, services, setServices, onLogout, barbers, addBarber, updateBarber, deleteBarber }) {
+function Config({ shop, services, setServices, onLogout, barbers, addBarber, updateBarber, deleteBarber, createService, updateService, deleteService }) {
   const [saved, setSaved]           = useState(false);
   const [svcModal, setSvcModal]     = useState(false);
   const [editSvc, setEditSvc]       = useState(null);
@@ -2634,11 +2634,11 @@ function Config({ shop, services, setServices, onLogout, barbers, addBarber, upd
 
   function openNewSvc()   { setEditSvc(null); setSvcForm({ name: "", price: "", duration: "" }); setSvcModal(true); }
   function openEditSvc(s) { setEditSvc(s.id);  setSvcForm({ name: s.name, price: String(s.price), duration: String(s.duration) }); setSvcModal(true); }
-  function saveSvc() {
+  async function saveSvc() {
     if (!svcForm.name.trim()) return;
-    const d = { name: svcForm.name, price: parseFloat(svcForm.price) || 0, duration: parseInt(svcForm.duration) || 30 };
-    if (editSvc) setServices(p => p.map(s => s.id === editSvc ? { ...s, ...d } : s));
-    else         setServices(p => [...p, { id: Date.now(), ...d }]);
+    const d = { name: svcForm.name.trim(), price: parseFloat(svcForm.price) || 0, duration: parseInt(svcForm.duration) || 30 };
+    if (editSvc) await updateService(editSvc, d);
+    else         await createService(d);
     setSvcModal(false); setEditSvc(null);
   }
 
@@ -2784,7 +2784,7 @@ function Config({ shop, services, setServices, onLogout, barbers, addBarber, upd
         open={!!deleting}
         title="Excluir serviço?"
         message={deleting ? `Tem certeza? "${deleting.name}" será removido permanentemente.` : ""}
-        onConfirm={() => { setServices(p => p.filter(x => x.id !== deleting.id)); setDeleting(null); }}
+        onConfirm={async () => { if (deleting) await deleteService(deleting.id); setDeleting(null); }}
         onCancel={() => setDeleting(null)}
         danger
       />
@@ -2820,7 +2820,7 @@ export default function App() {
   const [barbers,  setBarbersState] = useState([]); // carregado do Supabase
   const [authReady, setAuthReady] = useState(false);
   const [page,     setPage]     = useState("dashboard");
-  const [services, setServices] = useState(SERVICES_INIT);
+  const [services, setServices] = useState([]); // carregado do Supabase
   const [clients,  setClients]  = useState([]); // carregado do Supabase
   const [products, setProducts] = useState(PRODUCTS_INIT);
   const [appts,    setAppts]    = useState([]); // carregado do Supabase
@@ -3152,6 +3152,66 @@ export default function App() {
     setTxns(prev => prev.filter(t => t.id !== id));
   }, []);
 
+  // ── SERVIÇOS ────────────────────────────────────────────────────────────
+  const loadServices = useCallback(async (shopId) => {
+    if (!shopId) { setServices([]); return; }
+    const withTimeout = (p, ms, label) => Promise.race([
+      p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
+    ]);
+    try {
+      console.log("[fadein] loading services…");
+      const { data, error } = await withTimeout(
+        supabase.from("services").select("*").eq("shop_id", shopId).eq("active", true).order("name"),
+        8000, "select services"
+      );
+      if (error) { console.error("[fadein] services error:", error); return; }
+      const mapped = (data || []).map(r => ({
+        id:       r.id,
+        name:     r.name,
+        price:    parseFloat(r.price) || 0,
+        duration: parseInt(r.duration) || 30,
+      }));
+      setServices(mapped);
+      console.log("[fadein] services loaded:", mapped.length);
+    } catch (e) { console.error("[fadein] loadServices fatal:", e?.message || e); }
+  }, []);
+
+  const createService = useCallback(async (data) => {
+    if (!shop?.id) return null;
+    const row = {
+      shop_id:  shop.id,
+      name:     data.name,
+      price:    data.price || 0,
+      duration: data.duration || 30,
+      active:   true,
+    };
+    const { data: created, error } = await supabase.from("services").insert(row).select().maybeSingle();
+    if (error) { console.error("[fadein] createService:", error); return null; }
+    if (created) {
+      const s = { id: created.id, name: created.name, price: parseFloat(created.price) || 0, duration: parseInt(created.duration) || 30 };
+      setServices(prev => [...prev, s].sort((a, b) => a.name.localeCompare(b.name)));
+      return s;
+    }
+    return null;
+  }, [shop?.id]);
+
+  const updateService = useCallback(async (id, patch) => {
+    const dbPatch = {};
+    if (patch.name !== undefined)     dbPatch.name     = patch.name;
+    if (patch.price !== undefined)    dbPatch.price    = patch.price;
+    if (patch.duration !== undefined) dbPatch.duration = patch.duration;
+    const { error } = await supabase.from("services").update(dbPatch).eq("id", id);
+    if (error) { console.error("[fadein] updateService:", error); return; }
+    setServices(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+  }, []);
+
+  const deleteService = useCallback(async (id) => {
+    // soft delete: desativa em vez de excluir, para preservar histórico de agendamentos
+    const { error } = await supabase.from("services").update({ active: false }).eq("id", id);
+    if (error) { console.error("[fadein] deleteService:", error); return; }
+    setServices(prev => prev.filter(s => s.id !== id));
+  }, []);
+
   // ── Carrega shop do Supabase para um user_id ─────────────────────────────
   const loadShopForUser = useCallback(async (uid) => {
     console.log("[fadein] loadShopForUser uid=", uid);
@@ -3222,14 +3282,15 @@ export default function App() {
 
   // ── Carrega barbeiros e agendamentos sempre que o shop mudar ─────────────
   useEffect(() => {
-    if (!shop?.id) { setBarbersState([]); setAppts([]); setClients([]); setTxns([]); return; }
+    if (!shop?.id) { setBarbersState([]); setAppts([]); setClients([]); setTxns([]); setServices([]); return; }
     (async () => {
       // 1) carrega barbeiros primeiro (necessário pra resolver appts.barber)
       await loadBarbers(shop.id);
-      // 2) carrega clientes em paralelo (não dependem de outras tabelas)
+      // 2) carrega clientes e serviços em paralelo (não dependem de outras tabelas)
       loadClients(shop.id);
+      loadServices(shop.id);
     })();
-  }, [shop?.id, loadBarbers, loadClients]);
+  }, [shop?.id, loadBarbers, loadClients, loadServices]);
 
   // Quando barbeiros mudam (após shop), recarrega agendamentos e transações com lista atualizada
   useEffect(() => {
@@ -3271,25 +3332,24 @@ export default function App() {
       const raw = localStorage.getItem(key);
       if (raw) {
         const data = JSON.parse(raw);
-        if (data.services) setServices(data.services);
         if (data.products) setProducts(data.products);
-        // appts, clients, txns: vêm do Supabase, não restauram do localStorage
+        // appts, clients, txns, services: vêm do Supabase
       }
     } catch (e) { /* primeira vez, sem dados ainda */ }
     setHydrated(true);
   }, [shop, hydrated]);
 
-  // Salva quando muda algo (debounced) — só services e products no localStorage
+  // Salva quando muda algo (debounced) — só products no localStorage
   useEffect(() => {
     if (!shop || !hydrated) return;
     const t = setTimeout(() => {
       try {
         const key = "fadein:shop:" + shop.id + ":data";
-        localStorage.setItem(key, JSON.stringify({ services, products }));
+        localStorage.setItem(key, JSON.stringify({ products }));
       } catch (e) { /* ignora (quota etc.) */ }
     }, 600);
     return () => clearTimeout(t);
-  }, [shop, hydrated, services, products]);
+  }, [shop, hydrated, products]);
 
   // Tela de loading enquanto verifica sessão
   if (!authReady) return (
@@ -3350,7 +3410,7 @@ export default function App() {
                 <span style={{ flex: 1 }}>{n.label}</span>
                 {badge > 0 && (
                   <span style={{
-                    background: badgeColor, color: badgeColor === C.red ? "#fff" : "#0A0908",
+                    background: badgeColor, color: badgeColor === C.red ? "#fff" : "#1A1A1A",
                     fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10,
                     minWidth: 18, textAlign: "center",
                   }}>{badge}</span>
@@ -3408,7 +3468,7 @@ export default function App() {
         {page === "estoque"    && <Estoque    products={products} setProducts={setProducts} />}
         {page === "clientes"   && <Clientes   clients={clients}   setClients={setClients}   appts={appts} navigate={setPage} barbers={barbers} createClient={createClient} updateClient={updateClient} deleteClient={deleteClient} />}
         {page === "link"       && <LinkAgendamento shop={shop} appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} barbers={barbers} createAppt={createAppt} upsertClientFromAppt={upsertClientFromAppt} />}
-        {page === "config"     && <Config     shop={shop} services={services} setServices={setServices} onLogout={() => supabase.auth.signOut()} barbers={barbers} addBarber={addBarber} updateBarber={updateBarber} deleteBarber={deleteBarber} />}
+        {page === "config"     && <Config     shop={shop} services={services} setServices={setServices} onLogout={() => supabase.auth.signOut()} barbers={barbers} addBarber={addBarber} updateBarber={updateBarber} deleteBarber={deleteBarber} createService={createService} updateService={updateService} deleteService={deleteService} />}
       </main>
 
       {/* Bottom navigation mobile (5 itens principais) */}
