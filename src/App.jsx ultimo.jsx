@@ -83,6 +83,92 @@ const GLOBAL_CSS = `
   /* Smooth transitions everywhere */
   button { transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s; }
   button:active:not(:disabled) { transform: scale(0.98); }
+
+  /* ────────────────────── MOBILE RESPONSIVO ────────────────────── */
+  /* Layout shell */
+  .app-shell { display: flex; min-height: 100vh; }
+  .app-sidebar { width: 240px; border-right: 1px solid ${C.border}; display: flex; flex-direction: column; flex-shrink: 0; }
+  .app-main { flex: 1; padding: 32px 40px; min-width: 0; overflow-x: hidden; }
+  .app-bottom-nav { display: none; }
+  .app-mobile-header { display: none; }
+
+  /* Desktop: main com scroll independente */
+  @media (min-width: 769px) {
+    .app-shell { height: 100vh; overflow: hidden; }
+    .app-main { overflow-y: auto; max-height: 100vh; }
+  }
+
+  @media (max-width: 768px) {
+    /* Sidebar vira bottom nav em mobile */
+    .app-sidebar { display: none !important; }
+    .app-shell { flex-direction: column; }
+    .app-main { padding: 16px 16px 92px !important; }
+
+    /* Header mobile */
+    .app-mobile-header {
+      display: flex !important;
+      align-items: center; justify-content: space-between;
+      padding: 12px 16px;
+      background: ${C.card};
+      border-bottom: 1px solid ${C.border};
+      position: sticky; top: 0; z-index: 50;
+    }
+
+    /* Bottom navigation */
+    .app-bottom-nav {
+      display: flex !important;
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: ${C.card};
+      border-top: 1px solid ${C.border};
+      z-index: 100;
+      padding: 6px 4px calc(6px + env(safe-area-inset-bottom)) 4px;
+      justify-content: space-around;
+      align-items: stretch;
+    }
+    .app-bottom-nav button {
+      flex: 1;
+      background: none; border: none;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 3px;
+      padding: 6px 4px;
+      color: ${C.fgMuted};
+      font-size: 10px; font-weight: 500;
+      cursor: pointer;
+      min-height: 52px;
+      border-radius: 8px;
+    }
+    .app-bottom-nav button.active { color: ${C.goldBright}; }
+    .app-bottom-nav button svg { width: 20px; height: 20px; }
+
+    /* Tipografia mobile: hierarquia clara */
+    h1 { font-size: 22px !important; line-height: 1.2 !important; }
+    h2 { font-size: 17px !important; }
+    h3 { font-size: 15px !important; }
+
+    /* Inputs/botões: 44px mínimo (touch target padrão Apple/Google) */
+    input, select, textarea { min-height: 44px; font-size: 16px !important; }  /* 16px evita zoom no iOS */
+    button { min-height: 40px; }
+
+    /* Modais ocupam tela quase inteira (bottom sheet) */
+    .modal-content {
+      width: 100% !important; max-width: 100% !important;
+      max-height: 92vh !important;
+      margin: 0 !important;
+      border-radius: 18px 18px 0 0 !important;
+      padding: 22px 18px !important;
+    }
+    .modal-overlay {
+      padding: 0 !important;
+      align-items: flex-end !important;
+    }
+
+    /* Grids responsivos */
+    .grid-responsive { grid-template-columns: 1fr !important; }
+    .grid-responsive-2 { grid-template-columns: repeat(2, 1fr) !important; }
+
+    /* Tabelas com scroll horizontal */
+    .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  }
 `;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -466,12 +552,12 @@ function Modal({ title, subtitle, onClose, children, width = 440 }) {
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
   return (
-    <div onClick={onClose} className="fade-in" style={{
+    <div onClick={onClose} className="fade-in modal-overlay" style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)",
       display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500,
       backdropFilter: "blur(4px)",
     }}>
-      <div onClick={e => e.stopPropagation()} style={{
+      <div onClick={e => e.stopPropagation()} className="modal-content" style={{
         background: C.card, border: "1px solid " + C.border, borderRadius: 14,
         padding: 24, width, maxWidth: "94vw", maxHeight: "90vh", overflowY: "auto",
         boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
@@ -817,7 +903,7 @@ function Dashboard({ appts, txns, services, navigate }) {
       </div>
 
       {/* Bottom row: Today + Top services */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 16, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginBottom: 20 }}>
         <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <span style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.6 }}>
@@ -2047,7 +2133,8 @@ function Estoque({ products, setProducts }) {
         <KPI label="Estoque baixo" value={String(low.length)} note={low.length === 0 ? "tudo ok" : "repor em breve"} up={low.length === 0} />
       </div>
 
-      <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, overflow: "hidden" }}>
+      <div className="table-scroll" style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ minWidth: 640 }}>
         <div style={{ display: "grid", gridTemplateColumns: "2fr 90px 100px 75px 75px 90px", gap: 8, padding: "10px 18px", borderBottom: "1px solid " + C.border, fontSize: 10, color: C.fgMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
           <span>Produto</span><span>Categoria</span><span>Qtd</span><span>Custo</span><span>Venda</span><span>Ações</span>
         </div>
@@ -2077,6 +2164,7 @@ function Estoque({ products, setProducts }) {
             </div>
           </div>
         ))}
+        </div>
       </div>
 
       {modal && (
@@ -2164,7 +2252,7 @@ function Clientes({ clients, setClients, appts, navigate, barbers }) {
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: sc ? "1fr 1fr" : "1fr", gap: 16 }}>
+      <div className="grid-responsive" style={{ display: "grid", gridTemplateColumns: sc ? "1fr 1fr" : "1fr", gap: 16 }}>
         <div>
           <div style={{ position: "relative", marginBottom: 14 }}>
             <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.muted }}>{Ic.search}</span>
@@ -3050,17 +3138,12 @@ export default function App() {
   return (
     <>
     <style>{GLOBAL_CSS}</style>
-    <div style={{
-      display: "flex", minHeight: "100vh",
+    <div className="app-shell" style={{
       background: C.bg, color: C.fg,
       fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
       fontSize: 14,
     }}>
-      <aside style={{
-        width: 220, background: C.card,
-        borderRight: "1px solid " + C.border,
-        display: "flex", flexDirection: "column", flexShrink: 0,
-      }}>
+      <aside className="app-sidebar" style={{ background: C.card }}>
         <div style={{ padding: "22px 20px 18px", borderBottom: "1px solid " + C.border }}>
           <Logo />
           <div style={{
@@ -3128,10 +3211,16 @@ export default function App() {
         </div>
       </aside>
 
-      <main style={{
-        flex: 1, padding: "28px 32px",
-        overflowY: "auto", maxHeight: "100vh",
-      }}>
+      {/* Header mobile (visível só em telas pequenas) */}
+      <div className="app-mobile-header">
+        <Logo scale={0.85} />
+        <button onClick={() => supabase.auth.signOut()} title="Sair"
+          style={{ background: "none", border: "none", cursor: "pointer", color: C.fgMuted, padding: 6, display: "flex" }}>
+          {Ic.logout}
+        </button>
+      </div>
+
+      <main className="app-main">
         {page === "dashboard"  && <Dashboard  appts={appts} txns={txns} services={services} navigate={setPage} />}
         {page === "agenda"     && <Agenda     appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} setTxns={setTxns} barbers={barbers} createAppt={createAppt} updateAppt={updateAppt} cancelAppt={cancelAppt} />}
         {page === "financeiro" && <Financeiro txns={txns}   setTxns={setTxns}   navigate={setPage} />}
@@ -3141,6 +3230,16 @@ export default function App() {
         {page === "link"       && <LinkAgendamento shop={shop} appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} barbers={barbers} createAppt={createAppt} />}
         {page === "config"     && <Config     shop={shop} services={services} setServices={setServices} onLogout={() => supabase.auth.signOut()} barbers={barbers} addBarber={addBarber} updateBarber={updateBarber} deleteBarber={deleteBarber} />}
       </main>
+
+      {/* Bottom navigation mobile (5 itens principais) */}
+      <nav className="app-bottom-nav">
+        {NAV.filter(n => ["dashboard","agenda","financeiro","clientes","config"].includes(n.id)).map(n => (
+          <button key={n.id} onClick={() => setPage(n.id)} className={page === n.id ? "active" : ""}>
+            {n.icon}
+            <span>{n.label}</span>
+          </button>
+        ))}
+      </nav>
     </div>
     </>
   );
