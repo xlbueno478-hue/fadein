@@ -962,7 +962,7 @@ function Dashboard({ appts, txns, services, navigate }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // AGENDA — totalmente funcional
 // ═══════════════════════════════════════════════════════════════════════════
-function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbers, createAppt, updateAppt, cancelAppt }) {
+function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbers, createAppt, updateAppt, cancelAppt, upsertClientFromAppt }) {
   const [selDate, setSelDate]     = useState(TODAY_DS);
   const [barberF, setBarberF]     = useState(0);
   const [statusF, setStatusF]     = useState("all");
@@ -1072,11 +1072,13 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
       });
       flash("Agendamento atualizado", "success");
     } else {
-      // NEW — adiciona cliente novo se preencheu telefone
-      const exists = clients.find(c => c.name.toLowerCase() === trimmedClient.toLowerCase());
-      if (!exists && form.phone) {
-        setClients(p => [...p, { id: Date.now() + 1, name: trimmedClient, phone: form.phone, lastVisit: selDate, visits: 1, fav: barber.id, notes: "" }]);
-      }
+      // NEW — atualiza/cria cliente no Supabase (incrementa visita)
+      await upsertClientFromAppt({
+        name: trimmedClient,
+        phone: form.phone || "",
+        date: selDate,
+        barberId: barber.id,
+      });
       await createAppt({
         date: selDate,
         time: form.time,
@@ -1821,7 +1823,7 @@ function Financeiro({ txns, setTxns, navigate }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // LINK DE AGENDAMENTO — funcional + escreve no estado real
 // ═══════════════════════════════════════════════════════════════════════════
-function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients, barbers, createAppt }) {
+function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients, barbers, createAppt, upsertClientFromAppt }) {
   const [step, setStep]               = useState("service");
   const [selSvc, setSelSvc]           = useState(null);
   const [selBarber, setSelBarber]     = useState(null);
@@ -1875,11 +1877,14 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients,
       service: selSvc, barber: selBarber,
       status: "pending", paid: false,
     });
-    // Cliente novo?
-    const exists = clients.find(c => c.name.toLowerCase() === clientName.trim().toLowerCase());
-    if (!exists && clientPhone) {
-      setClients(p => [...p, { id: Date.now() + 1, name: clientName.trim(), phone: clientPhone, lastVisit: selDate, visits: 1, fav: selBarber.id, notes: "Veio pelo link de agendamento" }]);
-    }
+    // Atualiza/cria cliente no Supabase
+    await upsertClientFromAppt({
+      name: clientName.trim(),
+      phone: clientPhone || "",
+      date: selDate,
+      barberId: selBarber.id,
+      notes: "Veio pelo link de agendamento",
+    });
     setConfirmed(newAppt || { date: selDate, time: selTime, client: clientName.trim(), service: selSvc, barber: selBarber });
     setStep("done");
   }
@@ -2202,7 +2207,7 @@ function Estoque({ products, setProducts }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // CLIENTES
 // ═══════════════════════════════════════════════════════════════════════════
-function Clientes({ clients, setClients, appts, navigate, barbers }) {
+function Clientes({ clients, setClients, appts, navigate, barbers, createClient, updateClient, deleteClient }) {
   const [q, setQ]         = useState("");
   const [sel, setSel]     = useState(null);
   const [modal, setModal] = useState(false);
@@ -2221,9 +2226,16 @@ function Clientes({ clients, setClients, appts, navigate, barbers }) {
   const sc   = enriched.find(c => c.id === sel);
   const scAppts = sc ? appts.filter(a => a.client === sc.name).sort((a, b) => b.date.localeCompare(a.date)) : [];
 
-  function add() {
+  async function add() {
     if (!form.name.trim()) return;
-    setClients(p => [...p, { id: Date.now(), name: form.name, phone: form.phone, notes: form.notes, lastVisit: TODAY_DS, visits: 0, fav: 1 }]);
+    await createClient({
+      name: form.name.trim(),
+      phone: form.phone || "",
+      notes: form.notes || "",
+      lastVisit: null,
+      visits: 0,
+      fav: barbers[0]?.id || null,
+    });
     setModal(false); setForm({ name: "", phone: "", notes: "" });
   }
 
@@ -2808,7 +2820,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [page,     setPage]     = useState("dashboard");
   const [services, setServices] = useState(SERVICES_INIT);
-  const [clients,  setClients]  = useState(CLIENTS_INIT);
+  const [clients,  setClients]  = useState([]); // carregado do Supabase
   const [products, setProducts] = useState(PRODUCTS_INIT);
   const [appts,    setAppts]    = useState([]); // carregado do Supabase
   const [txns,     setTxns]     = useState(() => seedTransactions(SERVICES_INIT));
@@ -2973,6 +2985,101 @@ export default function App() {
     setAppts(prev => prev.map(a => a.id === id ? { ...a, status: "cancelled" } : a));
   }, []);
 
+  // ── CLIENTES ─────────────────────────────────────────────────────────────
+  const dbRowToClient = useCallback((row) => ({
+    id:        row.id,
+    name:      row.name,
+    phone:     row.phone || "",
+    lastVisit: row.last_visit || null,
+    visits:    row.visits || 0,
+    fav:       row.fav_barber || null,
+    notes:     row.notes || "",
+  }), []);
+
+  const loadClients = useCallback(async (shopId) => {
+    if (!shopId) { setClients([]); return; }
+    const withTimeout = (p, ms, label) => Promise.race([
+      p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
+    ]);
+    try {
+      console.log("[fadein] loading clients…");
+      const { data, error } = await withTimeout(
+        supabase.from("clients").select("*").eq("shop_id", shopId).order("name"),
+        8000, "select clients"
+      );
+      if (error) { console.error("[fadein] clients error:", error); return; }
+      setClients((data || []).map(dbRowToClient));
+      console.log("[fadein] clients loaded:", data?.length || 0);
+    } catch (e) { console.error("[fadein] loadClients fatal:", e?.message || e); }
+  }, [dbRowToClient]);
+
+  const createClient = useCallback(async (data) => {
+    if (!shop?.id) return null;
+    const row = {
+      shop_id:    shop.id,
+      name:       data.name,
+      phone:      data.phone || null,
+      last_visit: data.lastVisit || null,
+      visits:     data.visits || 0,
+      fav_barber: data.fav || null,
+      notes:      data.notes || null,
+    };
+    const { data: created, error } = await supabase.from("clients").insert(row).select().maybeSingle();
+    if (error) { console.error("[fadein] createClient:", error); return null; }
+    if (created) {
+      const newClient = dbRowToClient(created);
+      setClients(prev => [...prev, newClient].sort((a, b) => a.name.localeCompare(b.name)));
+      return newClient;
+    }
+    return null;
+  }, [shop?.id, dbRowToClient]);
+
+  const updateClient = useCallback(async (id, patch) => {
+    const dbPatch = {};
+    if (patch.name !== undefined)      dbPatch.name       = patch.name;
+    if (patch.phone !== undefined)     dbPatch.phone      = patch.phone || null;
+    if (patch.lastVisit !== undefined) dbPatch.last_visit = patch.lastVisit || null;
+    if (patch.visits !== undefined)    dbPatch.visits     = patch.visits;
+    if (patch.fav !== undefined)       dbPatch.fav_barber = patch.fav || null;
+    if (patch.notes !== undefined)     dbPatch.notes      = patch.notes || null;
+    const { error } = await supabase.from("clients").update(dbPatch).eq("id", id);
+    if (error) { console.error("[fadein] updateClient:", error); return; }
+    setClients(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
+  }, []);
+
+  const deleteClient = useCallback(async (id) => {
+    const { error } = await supabase.from("clients").delete().eq("id", id);
+    if (error) { console.error("[fadein] deleteClient:", error); return; }
+    setClients(prev => prev.filter(c => c.id !== id));
+  }, []);
+
+  // Helper: ao criar agendamento, garante que cliente existe e atualiza visita
+  const upsertClientFromAppt = useCallback(async ({ name, phone, date, barberId, notes }) => {
+    if (!shop?.id || !name?.trim()) return;
+    // Busca por telefone (mais confiável) ou por nome
+    let existing = null;
+    if (phone) existing = clients.find(c => c.phone === phone);
+    if (!existing) existing = clients.find(c => c.name.toLowerCase() === name.trim().toLowerCase());
+
+    if (existing) {
+      // Incrementa visita
+      await updateClient(existing.id, {
+        visits: (existing.visits || 0) + 1,
+        lastVisit: date,
+      });
+    } else {
+      // Cria novo
+      await createClient({
+        name: name.trim(),
+        phone: phone || "",
+        lastVisit: date,
+        visits: 1,
+        fav: barberId || null,
+        notes: notes || "",
+      });
+    }
+  }, [shop?.id, clients, createClient, updateClient]);
+
   // ── Carrega shop do Supabase para um user_id ─────────────────────────────
   const loadShopForUser = useCallback(async (uid) => {
     console.log("[fadein] loadShopForUser uid=", uid);
@@ -3043,12 +3150,14 @@ export default function App() {
 
   // ── Carrega barbeiros e agendamentos sempre que o shop mudar ─────────────
   useEffect(() => {
-    if (!shop?.id) { setBarbersState([]); setAppts([]); return; }
+    if (!shop?.id) { setBarbersState([]); setAppts([]); setClients([]); return; }
     (async () => {
       // 1) carrega barbeiros primeiro (necessário pra resolver appts.barber)
       await loadBarbers(shop.id);
+      // 2) carrega clientes em paralelo (não dependem de outras tabelas)
+      loadClients(shop.id);
     })();
-  }, [shop?.id, loadBarbers]);
+  }, [shop?.id, loadBarbers, loadClients]);
 
   // Quando barbeiros mudam (após shop), recarrega agendamentos com a lista atualizada
   useEffect(() => {
@@ -3090,26 +3199,25 @@ export default function App() {
       if (raw) {
         const data = JSON.parse(raw);
         if (data.services) setServices(data.services);
-        if (data.clients)  setClients(data.clients);
         if (data.products) setProducts(data.products);
-        // appts: vem do Supabase, não restaura do localStorage
+        // appts e clients: vêm do Supabase, não restauram do localStorage
         if (data.txns)     setTxns(data.txns);
       }
     } catch (e) { /* primeira vez, sem dados ainda */ }
     setHydrated(true);
   }, [shop, hydrated]);
 
-  // Salva quando muda algo (debounced) — appts NÃO entra aqui (está no Supabase)
+  // Salva quando muda algo (debounced) — appts/clients NÃO entram aqui (estão no Supabase)
   useEffect(() => {
     if (!shop || !hydrated) return;
     const t = setTimeout(() => {
       try {
         const key = "fadein:shop:" + shop.id + ":data";
-        localStorage.setItem(key, JSON.stringify({ services, clients, products, txns }));
+        localStorage.setItem(key, JSON.stringify({ services, products, txns }));
       } catch (e) { /* ignora (quota etc.) */ }
     }, 600);
     return () => clearTimeout(t);
-  }, [shop, hydrated, services, clients, products, txns]);
+  }, [shop, hydrated, services, products, txns]);
 
   // Tela de loading enquanto verifica sessão
   if (!authReady) return (
@@ -3222,12 +3330,12 @@ export default function App() {
 
       <main className="app-main">
         {page === "dashboard"  && <Dashboard  appts={appts} txns={txns} services={services} navigate={setPage} />}
-        {page === "agenda"     && <Agenda     appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} setTxns={setTxns} barbers={barbers} createAppt={createAppt} updateAppt={updateAppt} cancelAppt={cancelAppt} />}
+        {page === "agenda"     && <Agenda     appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} setTxns={setTxns} barbers={barbers} createAppt={createAppt} updateAppt={updateAppt} cancelAppt={cancelAppt} upsertClientFromAppt={upsertClientFromAppt} />}
         {page === "financeiro" && <Financeiro txns={txns}   setTxns={setTxns}   navigate={setPage} />}
         {page === "comissoes"  && <Comissoes  txns={txns}   appts={appts}       services={services} setServices={setServices} barbers={barbers} />}
         {page === "estoque"    && <Estoque    products={products} setProducts={setProducts} />}
-        {page === "clientes"   && <Clientes   clients={clients}   setClients={setClients}   appts={appts} navigate={setPage} barbers={barbers} />}
-        {page === "link"       && <LinkAgendamento shop={shop} appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} barbers={barbers} createAppt={createAppt} />}
+        {page === "clientes"   && <Clientes   clients={clients}   setClients={setClients}   appts={appts} navigate={setPage} barbers={barbers} createClient={createClient} updateClient={updateClient} deleteClient={deleteClient} />}
+        {page === "link"       && <LinkAgendamento shop={shop} appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} barbers={barbers} createAppt={createAppt} upsertClientFromAppt={upsertClientFromAppt} />}
         {page === "config"     && <Config     shop={shop} services={services} setServices={setServices} onLogout={() => supabase.auth.signOut()} barbers={barbers} addBarber={addBarber} updateBarber={updateBarber} deleteBarber={deleteBarber} />}
       </main>
 

@@ -962,7 +962,7 @@ function Dashboard({ appts, txns, services, navigate }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // AGENDA — totalmente funcional
 // ═══════════════════════════════════════════════════════════════════════════
-function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbers, createAppt, updateAppt, cancelAppt, upsertClientFromAppt }) {
+function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbers, createAppt, updateAppt, cancelAppt, upsertClientFromAppt, createTxn }) {
   const [selDate, setSelDate]     = useState(TODAY_DS);
   const [barberF, setBarberF]     = useState(0);
   const [statusF, setStatusF]     = useState("all");
@@ -1115,25 +1115,23 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
     // 1) Marca atendimento como feito (no banco + estado)
     await updateAppt(appt.id, { status: "done", paid: true });
 
-    // 2) Cria transação no financeiro (ainda local)
-    const txn = {
-      id: Date.now(),
-      date: appt.date,
-      desc: appt.service.name + " - " + appt.client,
-      amount: finalAmount,
+    // 2) Cria transação no financeiro (Supabase)
+    const commissionPct = appt.barber.commission || 0;
+    const commissionAmount = +(finalAmount * commissionPct / 100).toFixed(2);
+    await createTxn({
+      date:             appt.date,
+      desc:             appt.service.name + " - " + appt.client,
+      amount:           finalAmount,
       method,
-      barber: appt.barber.name,
-      barberId: appt.barber.id,
-      out: false,
-      apptId: appt.id,
-      // Comissão calculada e armazenada na transação:
-      commissionPct: appt.barber.commission,
-      commissionAmount: +(finalAmount * appt.barber.commission / 100).toFixed(2),
-    };
-    if (setTxns) setTxns(p => [txn, ...p]);
+      barberId:         appt.barber.id,
+      out:              false,
+      apptId:           appt.id,
+      commissionPct,
+      commissionAmount,
+    });
 
     setPaying(null);
-    flash("✓ Pago: " + fmtMoney(finalAmount) + " · Comissão " + fmtMoney(txn.commissionAmount), "success");
+    flash("✓ Pago: " + fmtMoney(finalAmount) + " · Comissão " + fmtMoney(commissionAmount), "success");
   }
 
   // Gera "código Pix" simulado (em produção viria da API do Asaas/Mercado Pago)
@@ -1609,7 +1607,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
 // ═══════════════════════════════════════════════════════════════════════════
 // FINANCEIRO
 // ═══════════════════════════════════════════════════════════════════════════
-function Financeiro({ txns, setTxns, navigate }) {
+function Financeiro({ txns, setTxns, navigate, createTxn, deleteTxn }) {
   const [period, setPeriod] = useState("month");
   const [tab, setTab]       = useState("all");
   const [modal, setModal]   = useState(false);
@@ -1657,14 +1655,17 @@ function Financeiro({ txns, setTxns, navigate }) {
   const byMethod = {};
   filtered.filter(t => !t.out).forEach(t => { byMethod[t.method] = (byMethod[t.method] || 0) + t.amount; });
 
-  function addTx() {
+  async function addTx() {
     const amt = parseFloat(String(form.amount).replace(",", "."));
     if (!form.desc.trim() || isNaN(amt) || amt <= 0) return;
-    setTxns(p => [{
-      id: Date.now(), date: TODAY_DS,
-      desc: form.desc, amount: amt,
-      method: form.method, barber: "-", out: form.out,
-    }, ...p]);
+    await createTxn({
+      date: TODAY_DS,
+      desc: form.desc.trim(),
+      amount: amt,
+      method: form.method,
+      barberId: null,
+      out: form.out,
+    });
     setModal(false);
     setForm({ desc: "", amount: "", method: "Pix", out: false });
   }
@@ -2823,7 +2824,7 @@ export default function App() {
   const [clients,  setClients]  = useState([]); // carregado do Supabase
   const [products, setProducts] = useState(PRODUCTS_INIT);
   const [appts,    setAppts]    = useState([]); // carregado do Supabase
-  const [txns,     setTxns]     = useState(() => seedTransactions(SERVICES_INIT));
+  const [txns,     setTxns]     = useState([]); // carregado do Supabase
   const [hydrated, setHydrated] = useState(false);
 
   // Paleta de cores para barbeiros (cíclica) — visual idêntico ao mock anterior
@@ -3080,6 +3081,77 @@ export default function App() {
     }
   }, [shop?.id, clients, createClient, updateClient]);
 
+  // ── TRANSAÇÕES (financeiro) ─────────────────────────────────────────────
+  const dbRowToTxn = useCallback((row, barbersList) => {
+    const barber = (barbersList || []).find(b => b.id === row.barber_id);
+    return {
+      id:               row.id,
+      date:             row.date,                         // YYYY-MM-DD
+      desc:             row.description,
+      amount:           parseFloat(row.amount) || 0,
+      method:           row.method || "",
+      barber:           barber?.name || "",
+      barberId:         row.barber_id || null,
+      out:              !!row.is_expense,
+      apptId:           row.appointment_id || null,
+      commissionPct:    row.commission_pct != null ? parseFloat(row.commission_pct) : undefined,
+      commissionAmount: row.commission_amount != null ? parseFloat(row.commission_amount) : undefined,
+      notes:            row.notes || "",
+    };
+  }, []);
+
+  const txnToDbRow = useCallback((t, shopId) => ({
+    shop_id:           shopId,
+    date:              t.date,                            // já YYYY-MM-DD
+    description:       t.desc || "",
+    amount:            t.amount || 0,
+    method:            t.method || null,
+    barber_id:         t.barberId || null,
+    appointment_id:    t.apptId || null,
+    is_expense:        !!t.out,
+    commission_pct:    t.commissionPct ?? null,
+    commission_amount: t.commissionAmount ?? null,
+    notes:             t.notes || null,
+  }), []);
+
+  const loadTxns = useCallback(async (shopId, barbersList) => {
+    if (!shopId) { setTxns([]); return; }
+    const withTimeout = (p, ms, label) => Promise.race([
+      p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
+    ]);
+    try {
+      console.log("[fadein] loading txns…");
+      const today = new Date();
+      const from  = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 90).toISOString().slice(0, 10);
+      const { data, error } = await withTimeout(
+        supabase.from("transactions").select("*").eq("shop_id", shopId).gte("date", from).order("date", { ascending: false }),
+        8000, "select txns"
+      );
+      if (error) { console.error("[fadein] txns error:", error); return; }
+      setTxns((data || []).map(r => dbRowToTxn(r, barbersList)));
+      console.log("[fadein] txns loaded:", data?.length || 0);
+    } catch (e) { console.error("[fadein] loadTxns fatal:", e?.message || e); }
+  }, [dbRowToTxn]);
+
+  const createTxn = useCallback(async (txnData) => {
+    if (!shop?.id) return null;
+    const row = txnToDbRow(txnData, shop.id);
+    const { data: created, error } = await supabase.from("transactions").insert(row).select().maybeSingle();
+    if (error) { console.error("[fadein] createTxn:", error); return null; }
+    if (created) {
+      const newTxn = dbRowToTxn(created, barbers);
+      setTxns(prev => [newTxn, ...prev]);
+      return newTxn;
+    }
+    return null;
+  }, [shop?.id, barbers, txnToDbRow, dbRowToTxn]);
+
+  const deleteTxn = useCallback(async (id) => {
+    const { error } = await supabase.from("transactions").delete().eq("id", id);
+    if (error) { console.error("[fadein] deleteTxn:", error); return; }
+    setTxns(prev => prev.filter(t => t.id !== id));
+  }, []);
+
   // ── Carrega shop do Supabase para um user_id ─────────────────────────────
   const loadShopForUser = useCallback(async (uid) => {
     console.log("[fadein] loadShopForUser uid=", uid);
@@ -3150,7 +3222,7 @@ export default function App() {
 
   // ── Carrega barbeiros e agendamentos sempre que o shop mudar ─────────────
   useEffect(() => {
-    if (!shop?.id) { setBarbersState([]); setAppts([]); setClients([]); return; }
+    if (!shop?.id) { setBarbersState([]); setAppts([]); setClients([]); setTxns([]); return; }
     (async () => {
       // 1) carrega barbeiros primeiro (necessário pra resolver appts.barber)
       await loadBarbers(shop.id);
@@ -3159,12 +3231,13 @@ export default function App() {
     })();
   }, [shop?.id, loadBarbers, loadClients]);
 
-  // Quando barbeiros mudam (após shop), recarrega agendamentos com a lista atualizada
+  // Quando barbeiros mudam (após shop), recarrega agendamentos e transações com lista atualizada
   useEffect(() => {
     if (shop?.id && barbers.length >= 0) {
       loadAppts(shop.id, barbers);
+      loadTxns(shop.id, barbers);
     }
-  }, [shop?.id, barbers, loadAppts]);
+  }, [shop?.id, barbers, loadAppts, loadTxns]);
 
   // Helpers expostos pra Config: criar/editar/excluir barbeiros
   const addBarber = useCallback(async (data) => {
@@ -3200,24 +3273,23 @@ export default function App() {
         const data = JSON.parse(raw);
         if (data.services) setServices(data.services);
         if (data.products) setProducts(data.products);
-        // appts e clients: vêm do Supabase, não restauram do localStorage
-        if (data.txns)     setTxns(data.txns);
+        // appts, clients, txns: vêm do Supabase, não restauram do localStorage
       }
     } catch (e) { /* primeira vez, sem dados ainda */ }
     setHydrated(true);
   }, [shop, hydrated]);
 
-  // Salva quando muda algo (debounced) — appts/clients NÃO entram aqui (estão no Supabase)
+  // Salva quando muda algo (debounced) — só services e products no localStorage
   useEffect(() => {
     if (!shop || !hydrated) return;
     const t = setTimeout(() => {
       try {
         const key = "fadein:shop:" + shop.id + ":data";
-        localStorage.setItem(key, JSON.stringify({ services, products, txns }));
+        localStorage.setItem(key, JSON.stringify({ services, products }));
       } catch (e) { /* ignora (quota etc.) */ }
     }, 600);
     return () => clearTimeout(t);
-  }, [shop, hydrated, services, products, txns]);
+  }, [shop, hydrated, services, products]);
 
   // Tela de loading enquanto verifica sessão
   if (!authReady) return (
@@ -3330,8 +3402,8 @@ export default function App() {
 
       <main className="app-main">
         {page === "dashboard"  && <Dashboard  appts={appts} txns={txns} services={services} navigate={setPage} />}
-        {page === "agenda"     && <Agenda     appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} setTxns={setTxns} barbers={barbers} createAppt={createAppt} updateAppt={updateAppt} cancelAppt={cancelAppt} upsertClientFromAppt={upsertClientFromAppt} />}
-        {page === "financeiro" && <Financeiro txns={txns}   setTxns={setTxns}   navigate={setPage} />}
+        {page === "agenda"     && <Agenda     appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} setTxns={setTxns} barbers={barbers} createAppt={createAppt} updateAppt={updateAppt} cancelAppt={cancelAppt} upsertClientFromAppt={upsertClientFromAppt} createTxn={createTxn} />}
+        {page === "financeiro" && <Financeiro txns={txns}   setTxns={setTxns}   navigate={setPage} createTxn={createTxn} deleteTxn={deleteTxn} />}
         {page === "comissoes"  && <Comissoes  txns={txns}   appts={appts}       services={services} setServices={setServices} barbers={barbers} />}
         {page === "estoque"    && <Estoque    products={products} setProducts={setProducts} />}
         {page === "clientes"   && <Clientes   clients={clients}   setClients={setClients}   appts={appts} navigate={setPage} barbers={barbers} createClient={createClient} updateClient={updateClient} deleteClient={deleteClient} />}
