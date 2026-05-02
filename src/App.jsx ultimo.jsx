@@ -876,7 +876,7 @@ function Dashboard({ appts, txns, services, navigate }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // AGENDA — totalmente funcional
 // ═══════════════════════════════════════════════════════════════════════════
-function Agenda({ appts, setAppts, services, clients, setClients, setTxns }) {
+function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbers, createAppt, updateAppt, cancelAppt }) {
   const [selDate, setSelDate]     = useState(TODAY_DS);
   const [barberF, setBarberF]     = useState(0);
   const [statusF, setStatusF]     = useState("all");
@@ -887,7 +887,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns }) {
   const [toast, setToast]         = useState({ msg: "", type: "ok" });
   const [viewMode, setViewMode]   = useState("strip");
   const [calMonth, setCalMonth]   = useState({ y: BASE_DATE.getFullYear(), m: BASE_DATE.getMonth() });
-  const [form, setForm]           = useState({ client: "", phone: "", serviceId: "1", barberId: "1", time: "" });
+  const [form, setForm]           = useState({ client: "", phone: "", serviceId: "1", barberId: "", time: "" });
   const [clientSugg, setClientSugg] = useState(false);
   const stripRef = useRef(null);
 
@@ -923,7 +923,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns }) {
   const dateIsPast = isPast(selDate);
   const selSvc  = services.find(s => s.id === parseInt(form.serviceId));
   const avSlots = useMemo(() =>
-    selSvc ? getAvailableSlots(appts, selDate, parseInt(form.barberId), selSvc.duration) : []
+    selSvc ? getAvailableSlots(appts, selDate, form.barberId, selSvc.duration) : []
   , [selSvc, appts, selDate, form.barberId]);
 
   // Suggestions for client autocomplete
@@ -937,7 +937,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns }) {
     if (dateIsPast) return;
     const first = avSlots[0] || HOURS[0];
     setEditing(null);
-    setForm({ client: "", phone: "", serviceId: "1", barberId: "1", time: first });
+    setForm({ client: "", phone: "", serviceId: "1", barberId: barbers[0]?.id || "", time: first });
     setModal(true);
   }
 
@@ -959,7 +959,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns }) {
         const svcId = key === "serviceId" ? val : next.serviceId;
         const bId   = key === "barberId"  ? val : next.barberId;
         const svc   = services.find(s => s.id === parseInt(svcId));
-        const sl    = getAvailableSlots(appts, selDate, parseInt(bId), svc ? svc.duration : 30);
+        const sl    = getAvailableSlots(appts, selDate, bId, svc ? svc.duration : 30);
         // Mantém o horário se ainda disponível; senão escolhe o primeiro
         next.time = sl.includes(next.time) ? next.time : (sl[0] || "");
       }
@@ -972,18 +972,18 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns }) {
     setClientSugg(false);
   }
 
-  function saveAppt() {
+  async function saveAppt() {
     const trimmedClient = form.client.trim();
     if (!trimmedClient) { flash("Digite o nome do cliente", "err"); return; }
     if (!form.time)     { flash("Selecione um horário",        "err"); return; }
 
     const svc    = services.find(s => s.id === parseInt(form.serviceId));
-    const barber = BARBERS.find(b => b.id === parseInt(form.barberId));
+    const barber = barbers.find(b => b.id === form.barberId);
 
     if (editing) {
-      setAppts(p => p.map(a => a.id === editing.id ? {
-        ...a, client: trimmedClient, service: svc, barber, time: form.time,
-      } : a));
+      await updateAppt(editing.id, {
+        client: trimmedClient, service: svc, barber, time: form.time, date: selDate,
+      });
       flash("Agendamento atualizado", "success");
     } else {
       // NEW — adiciona cliente novo se preencheu telefone
@@ -991,17 +991,16 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns }) {
       if (!exists && form.phone) {
         setClients(p => [...p, { id: Date.now() + 1, name: trimmedClient, phone: form.phone, lastVisit: selDate, visits: 1, fav: barber.id, notes: "" }]);
       }
-      const newAppt = {
-        id: Date.now(),
+      await createAppt({
         date: selDate,
         time: form.time,
         client: trimmedClient,
+        clientPhone: form.phone || "",
         service: svc,
         barber,
         status: "confirmed",
         paid: false,
-      };
-      setAppts(p => [...p, newAppt]);
+      });
       flash("✓ " + trimmedClient + " — " + fmtShort(selDate) + " às " + form.time, "success");
     }
     setModal(false);
@@ -1019,18 +1018,16 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns }) {
   }
 
   // Confirmar pagamento → finalizar atendimento + criar transação + comissão
-  function finalizePay() {
+  async function finalizePay() {
     if (!paying) return;
     const { appt, method, amount } = paying;
     const finalAmount = parseFloat(String(amount).replace(",", "."));
     if (isNaN(finalAmount) || finalAmount <= 0) { flash("Valor inválido", "err"); return; }
 
-    // 1) Marca atendimento como feito
-    setAppts(p => p.map(a => a.id === appt.id ? {
-      ...a, status: "done", paid: true, paidAmount: finalAmount, paidMethod: method,
-    } : a));
+    // 1) Marca atendimento como feito (no banco + estado)
+    await updateAppt(appt.id, { status: "done", paid: true });
 
-    // 2) Cria transação no financeiro
+    // 2) Cria transação no financeiro (ainda local)
     const txn = {
       id: Date.now(),
       date: appt.date,
@@ -1065,8 +1062,8 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns }) {
     const appt = appts.find(a => a.id === id);
     if (appt) openPay(appt);
   }
-  function confirmIt(id)   { setAppts(p => p.map(a => a.id === id ? { ...a, status: "confirmed" } : a)); flash("Confirmado"); }
-  function reallyCancel()  { setAppts(p => p.filter(a => a.id !== confirming.id)); setConfirming(null); flash("Agendamento cancelado", "err"); }
+  async function confirmIt(id)   { await updateAppt(id, { status: "confirmed" }); flash("Confirmado"); }
+  async function reallyCancel()  { if (confirming) await cancelAppt(confirming.id); setConfirming(null); flash("Agendamento cancelado", "err"); }
 
   useEffect(() => {
     if (stripRef.current && viewMode === "strip") {
@@ -1078,7 +1075,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns }) {
   const MONTHS = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
   // Stats by barber for the day
-  const barberStats = BARBERS.map(b => {
+  const barberStats = barbers.map(b => {
     const dayApp = appts.filter(a => a.date === selDate && a.barber.id === b.id);
     return {
       barber: b,
@@ -1345,7 +1342,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns }) {
 
           <Sel label="Barbeiro" value={form.barberId}
             onChange={e => updForm("barberId", e.target.value)}
-            options={BARBERS.map(b => ({ v: String(b.id), l: b.name }))} />
+            options={barbers.map(b => ({ v: String(b.id), l: b.name }))} />
 
           <Sel label={"Horário · " + avSlots.length + " disponíveis"} value={form.time}
             onChange={e => setForm(p => ({ ...p, time: e.target.value }))}
@@ -1738,7 +1735,7 @@ function Financeiro({ txns, setTxns, navigate }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // LINK DE AGENDAMENTO — funcional + escreve no estado real
 // ═══════════════════════════════════════════════════════════════════════════
-function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients }) {
+function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients, barbers, createAppt }) {
   const [step, setStep]               = useState("service");
   const [selSvc, setSelSvc]           = useState(null);
   const [selBarber, setSelBarber]     = useState(null);
@@ -1782,23 +1779,22 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients 
     setSelTime(null); setClientName(""); setClientPhone(""); setConfirmed(null);
   }
 
-  function confirm() {
+  async function confirm() {
     if (!clientName.trim()) return;
-    // ESCREVE NO ESTADO REAL
-    const newAppt = {
-      id: Date.now(),
+    // ESCREVE NO BANCO via createAppt
+    const newAppt = await createAppt({
       date: selDate, time: selTime,
       client: clientName.trim(),
+      clientPhone: clientPhone || "",
       service: selSvc, barber: selBarber,
       status: "pending", paid: false,
-    };
-    setAppts(p => [...p, newAppt]);
+    });
     // Cliente novo?
     const exists = clients.find(c => c.name.toLowerCase() === clientName.trim().toLowerCase());
     if (!exists && clientPhone) {
       setClients(p => [...p, { id: Date.now() + 1, name: clientName.trim(), phone: clientPhone, lastVisit: selDate, visits: 1, fav: selBarber.id, notes: "Veio pelo link de agendamento" }]);
     }
-    setConfirmed(newAppt);
+    setConfirmed(newAppt || { date: selDate, time: selTime, client: clientName.trim(), service: selSvc, barber: selBarber });
     setStep("done");
   }
 
@@ -1887,7 +1883,7 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients 
               </button>
               <p style={{ fontSize: 13, color: C.fgMuted, margin: "0 0 12px" }}>Escolha o barbeiro:</p>
               <div style={{ display: "flex", gap: 10 }}>
-                {BARBERS.map(b => (
+                {barbers.map(b => (
                   <button key={b.id} onClick={() => { setSelBarber(b); setSelTime(null); setStep("time"); }}
                     style={{
                       flex: 1, padding: "14px 8px", background: C.card,
@@ -2118,7 +2114,7 @@ function Estoque({ products, setProducts }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // CLIENTES
 // ═══════════════════════════════════════════════════════════════════════════
-function Clientes({ clients, setClients, appts, navigate }) {
+function Clientes({ clients, setClients, appts, navigate, barbers }) {
   const [q, setQ]         = useState("");
   const [sel, setSel]     = useState(null);
   const [modal, setModal] = useState(false);
@@ -2237,7 +2233,7 @@ function Clientes({ clients, setClients, appts, navigate }) {
               {[
                 [sc.visits, "Visitas", C.goldBright],
                 [agoLabel(sc.lastVisit), "Última visita", C.fg],
-                [BARBERS.find(b => b.id === sc.fav)?.name || "—", "Favorito", C.fg],
+                [barbers.find(b => b.id === sc.fav)?.name || "—", "Favorito", C.fg],
               ].map(([v, l, col]) => (
                 <div key={l} style={{ background: C.bgSunken, borderRadius: 8, padding: "14px 10px", textAlign: "center" }}>
                   <div style={{ fontSize: 17, fontWeight: 700, color: col, fontFamily: "Georgia, serif" }}>{v}</div>
@@ -2297,7 +2293,7 @@ function Clientes({ clients, setClients, appts, navigate }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // COMISSÕES — quem ganhou o quê, sem briga
 // ═══════════════════════════════════════════════════════════════════════════
-function Comissoes({ txns, appts, services, setServices }) {
+function Comissoes({ txns, appts, services, setServices, barbers }) {
   const [period, setPeriod]   = useState("month");
   const [selBarber, setSelBarber] = useState(0); // 0 = todos
   const [editComm, setEditComm] = useState(null); // {barberId, value}
@@ -2312,7 +2308,7 @@ function Comissoes({ txns, appts, services, setServices }) {
   , [txns, startDs]);
 
   // Stats por barbeiro
-  const barberData = BARBERS.map(b => {
+  const barberData = barbers.map(b => {
     const myTxns = commTxns.filter(t => t.barberId === b.id);
     const totalRev = myTxns.reduce((s, t) => s + t.amount, 0);
     const totalComm = myTxns.reduce((s, t) => s + (t.commissionAmount || (t.amount * b.commission / 100)), 0);
@@ -2372,7 +2368,7 @@ function Comissoes({ txns, appts, services, setServices }) {
           background: selBarber === 0 ? C.fg : "transparent",
           color: selBarber === 0 ? C.bg : C.fgMuted,
         }}>Todos</button>
-        {BARBERS.map(b => (
+        {barbers.map(b => (
           <button key={b.id} onClick={() => setSelBarber(b.id)} style={{
             display: "flex", alignItems: "center", gap: 6,
             padding: "6px 14px", borderRadius: 18, fontSize: 12, fontWeight: 600, cursor: "pointer",
@@ -2493,12 +2489,47 @@ function Comissoes({ txns, appts, services, setServices }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
-function Config({ shop, services, setServices, onLogout }) {
+function Config({ shop, services, setServices, onLogout, barbers, addBarber, updateBarber, deleteBarber }) {
   const [saved, setSaved]           = useState(false);
   const [svcModal, setSvcModal]     = useState(false);
   const [editSvc, setEditSvc]       = useState(null);
   const [deleting, setDeleting]     = useState(null);
   const [svcForm, setSvcForm]       = useState({ name: "", price: "", duration: "" });
+
+  // Barbeiros
+  const [barberModal, setBarberModal] = useState(false);
+  const [editBarber, setEditBarber]   = useState(null);
+  const [delBarber, setDelBarber]     = useState(null);
+  const [barberForm, setBarberForm]   = useState({ name: "", role: "", commission: "" });
+  const [savingBarber, setSavingBarber] = useState(false);
+
+  function openNewBarber() {
+    setEditBarber(null);
+    setBarberForm({ name: "", role: "Barbeiro", commission: "50" });
+    setBarberModal(true);
+  }
+  function openEditBarber(b) {
+    setEditBarber(b.id);
+    setBarberForm({ name: b.name, role: b.role || "Barbeiro", commission: String(b.commission ?? 50) });
+    setBarberModal(true);
+  }
+  async function saveBarber() {
+    if (!barberForm.name.trim()) return;
+    setSavingBarber(true);
+    const data = {
+      name: barberForm.name.trim(),
+      role: barberForm.role.trim() || "Barbeiro",
+      commission: parseFloat(barberForm.commission) || 50,
+    };
+    try {
+      if (editBarber) await updateBarber(editBarber, data);
+      else            await addBarber(data);
+    } finally {
+      setSavingBarber(false);
+      setBarberModal(false);
+      setEditBarber(null);
+    }
+  }
 
   function openNewSvc()   { setEditSvc(null); setSvcForm({ name: "", price: "", duration: "" }); setSvcModal(true); }
   function openEditSvc(s) { setEditSvc(s.id);  setSvcForm({ name: s.name, price: String(s.price), duration: String(s.duration) }); setSvcModal(true); }
@@ -2546,6 +2577,37 @@ function Config({ shop, services, setServices, onLogout }) {
               }}>{d}</button>
             ))}
           </div>
+        </div>
+
+        <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: C.fg, margin: 0 }}>Equipe</h3>
+            <Btn sm icon={Ic.plus} onClick={openNewBarber}>Novo barbeiro</Btn>
+          </div>
+          {barbers.length === 0 && (
+            <p style={{ fontSize: 12, color: C.fgMuted, margin: 0, padding: "10px 0" }}>
+              Nenhum barbeiro cadastrado. Clique em "Novo barbeiro" para começar.
+            </p>
+          )}
+          {barbers.map((b, i) => (
+            <div key={b.id} style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 0", borderBottom: i < barbers.length - 1 ? "1px solid " + C.border : "none",
+            }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: "50%",
+                background: (b.color || "#E0B445") + "30", color: b.color || "#E0B445",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 13, fontWeight: 700, flexShrink: 0,
+              }}>{b.avatar || (b.name || "?").charAt(0).toUpperCase()}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.fg }}>{b.name}</div>
+                <div style={{ fontSize: 11, color: C.fgMuted }}>{b.role || "Barbeiro"} · {b.commission ?? 50}%</div>
+              </div>
+              <button onClick={() => openEditBarber(b)} style={{ padding: "5px 8px", borderRadius: 6, border: "none", background: C.goldDim, color: C.goldBright, cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center" }}>{Ic.edit}</button>
+              <button onClick={() => setDelBarber(b)} style={{ padding: "5px 8px", borderRadius: 6, border: "none", background: C.redDim, color: C.red, cursor: "pointer", fontSize: 11, display: "flex", alignItems: "center" }}>{Ic.trash}</button>
+            </div>
+          ))}
         </div>
 
         <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
@@ -2603,12 +2665,35 @@ function Config({ shop, services, setServices, onLogout }) {
         </Modal>
       )}
 
+      {barberModal && (
+        <Modal title={editBarber ? "Editar barbeiro" : "Novo barbeiro"} onClose={() => { setBarberModal(false); setEditBarber(null); }}>
+          <Inp label="Nome" value={barberForm.name} onChange={e => setBarberForm(p => ({ ...p, name: e.target.value }))} placeholder="Ex: Carlos" />
+          <Inp label="Função" value={barberForm.role} onChange={e => setBarberForm(p => ({ ...p, role: e.target.value }))} placeholder="Barbeiro, Barbeiro Senior, Aprendiz..." />
+          <Inp label="Comissão (%)" type="number" value={barberForm.commission} onChange={e => setBarberForm(p => ({ ...p, commission: e.target.value }))} placeholder="50" hint="Percentual que vai para o barbeiro a cada atendimento" />
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            <Btn onClick={saveBarber} disabled={savingBarber} full>
+              {savingBarber ? "Salvando..." : (editBarber ? "Salvar" : "Adicionar barbeiro")}
+            </Btn>
+            <Btn v="ghost" onClick={() => { setBarberModal(false); setEditBarber(null); }} disabled={savingBarber}>Cancelar</Btn>
+          </div>
+        </Modal>
+      )}
+
       <ConfirmDialog
         open={!!deleting}
         title="Excluir serviço?"
         message={deleting ? `Tem certeza? "${deleting.name}" será removido permanentemente.` : ""}
         onConfirm={() => { setServices(p => p.filter(x => x.id !== deleting.id)); setDeleting(null); }}
         onCancel={() => setDeleting(null)}
+        danger
+      />
+
+      <ConfirmDialog
+        open={!!delBarber}
+        title="Remover barbeiro?"
+        message={delBarber ? `Tem certeza que deseja remover "${delBarber.name}"? O histórico de atendimentos será preservado.` : ""}
+        onConfirm={async () => { if (delBarber) await deleteBarber(delBarber.id); setDelBarber(null); }}
+        onCancel={() => setDelBarber(null)}
         danger
       />
     </div>
@@ -2631,14 +2716,174 @@ const NAV = [
 
 export default function App() {
   const [shop,     setShop]     = useState(null);
+  const [barbers,  setBarbersState] = useState([]); // carregado do Supabase
   const [authReady, setAuthReady] = useState(false);
   const [page,     setPage]     = useState("dashboard");
   const [services, setServices] = useState(SERVICES_INIT);
   const [clients,  setClients]  = useState(CLIENTS_INIT);
   const [products, setProducts] = useState(PRODUCTS_INIT);
-  const [appts,    setAppts]    = useState(() => seedAppointments(SERVICES_INIT));
+  const [appts,    setAppts]    = useState([]); // carregado do Supabase
   const [txns,     setTxns]     = useState(() => seedTransactions(SERVICES_INIT));
   const [hydrated, setHydrated] = useState(false);
+
+  // Paleta de cores para barbeiros (cíclica) — visual idêntico ao mock anterior
+  const BARBER_PALETTE = ["#E0B445", "#5A9BE2", "#5BAF6F", "#E27E5A", "#9B6FD4", "#D45A8A"];
+  const enrichBarber = (b, idx) => ({
+    ...b,
+    avatar: (b.name || "?").charAt(0).toUpperCase(),
+    color: BARBER_PALETTE[idx % BARBER_PALETTE.length],
+  });
+
+  // ── Carrega barbeiros do shop ──────────────────────────────────────────
+  const loadBarbers = useCallback(async (shopId) => {
+    if (!shopId) { setBarbersState([]); return; }
+    const withTimeout = (p, ms, label) => Promise.race([
+      p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
+    ]);
+    try {
+      console.log("[fadein] loading barbers…");
+      const { data, error } = await withTimeout(
+        supabase.from("barbers").select("*").eq("shop_id", shopId).eq("active", true).order("created_at"),
+        8000, "select barbers"
+      );
+      if (error) { console.error("[fadein] barbers error:", error); return; }
+      const enriched = (data || []).map((b, i) => enrichBarber(b, i));
+      console.log("[fadein] barbers loaded:", enriched.length);
+      setBarbersState(enriched);
+    } catch (e) { console.error("[fadein] loadBarbers fatal:", e?.message || e); }
+  }, []);
+
+  // ── APPOINTMENTS — conversão DB ↔ UI ────────────────────────────────────
+  // UI shape: { id, date: "YYYY-MM-DD", time: "HH:MM", client, service: {...}, barber: {...}, status, paid, paidAmount, paidMethod }
+  // DB shape: { id, shop_id, barber_id, client_name, client_phone, service (text), service_data (jsonb), price, status, date (timestamptz), time, paid, notes }
+  const dbRowToAppt = useCallback((row, barbersList) => {
+    if (!row) return null;
+    const dtIso = row.date;            // timestamptz
+    const dt    = new Date(dtIso);
+    const dateStr = dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate());
+    const timeStr = row.time || (pad(dt.getHours()) + ":" + pad(dt.getMinutes()));
+    let svc = null;
+    try {
+      svc = row.service_data ? (typeof row.service_data === "string" ? JSON.parse(row.service_data) : row.service_data) : null;
+    } catch (e) { svc = null; }
+    if (!svc) svc = { id: 0, name: row.service || "Serviço", price: parseFloat(row.price) || 0, duration: 30 };
+    const barber = (barbersList || []).find(b => b.id === row.barber_id) || { id: row.barber_id, name: "—", color: "#888", avatar: "?", commission: 50 };
+    return {
+      id: row.id,
+      date: dateStr,
+      time: timeStr,
+      client: row.client_name,
+      clientPhone: row.client_phone || "",
+      service: svc,
+      barber,
+      status: row.status || "pending",
+      paid: !!row.paid,
+      paidAmount: row.paid ? parseFloat(row.price) : undefined,
+      paidMethod: undefined,
+      notes: row.notes || "",
+    };
+  }, []);
+
+  const apptToDbRow = useCallback((appt, shopId) => {
+    // Combina date + time em timestamptz local
+    const [Y, M, D] = (appt.date || "").split("-").map(Number);
+    const [hh, mm]  = (appt.time || "00:00").split(":").map(Number);
+    const dt = new Date(Y, (M || 1) - 1, D || 1, hh || 0, mm || 0);
+    return {
+      shop_id:      shopId,
+      barber_id:    appt.barber?.id || null,
+      client_name:  appt.client,
+      client_phone: appt.clientPhone || null,
+      service:      appt.service?.name || "Serviço",
+      service_data: appt.service || null,
+      price:        appt.service?.price || 0,
+      status:       appt.status || "pending",
+      date:         dt.toISOString(),
+      time:         appt.time,
+      paid:         !!appt.paid,
+      notes:        appt.notes || null,
+    };
+  }, []);
+
+  // ── Carrega agendamentos do shop ────────────────────────────────────────
+  const loadAppts = useCallback(async (shopId, barbersList) => {
+    if (!shopId) { setAppts([]); return; }
+    const withTimeout = (p, ms, label) => Promise.race([
+      p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
+    ]);
+    try {
+      console.log("[fadein] loading appts…");
+      // Janela: últimos 60 dias + próximos 30 dias (suficiente para a UI)
+      const today = new Date();
+      const from  = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 60).toISOString();
+      const to    = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 31).toISOString();
+      const { data, error } = await withTimeout(
+        supabase.from("appointments")
+          .select("*")
+          .eq("shop_id", shopId)
+          .gte("date", from)
+          .lte("date", to)
+          .order("date"),
+        8000, "select appts"
+      );
+      if (error) { console.error("[fadein] appts error:", error); return; }
+      const list = (data || []).map(r => dbRowToAppt(r, barbersList));
+      console.log("[fadein] appts loaded:", list.length);
+      setAppts(list);
+    } catch (e) { console.error("[fadein] loadAppts fatal:", e?.message || e); }
+  }, [dbRowToAppt]);
+
+  // ── CRUD de agendamentos ─────────────────────────────────────────────────
+  const createAppt = useCallback(async (apptData) => {
+    if (!shop?.id) return null;
+    const row = apptToDbRow(apptData, shop.id);
+    const { data, error } = await supabase.from("appointments").insert(row).select().maybeSingle();
+    if (error) { console.error("[fadein] createAppt:", error); return null; }
+    if (data) {
+      const newAppt = dbRowToAppt(data, barbers);
+      setAppts(prev => [...prev, newAppt]);
+      return newAppt;
+    }
+    return null;
+  }, [shop?.id, barbers, apptToDbRow, dbRowToAppt]);
+
+  const updateAppt = useCallback(async (id, patch) => {
+    // patch é um objeto parcial no shape UI; convertemos só os campos relevantes para DB
+    const dbPatch = {};
+    if (patch.client !== undefined)      dbPatch.client_name = patch.client;
+    if (patch.clientPhone !== undefined) dbPatch.client_phone = patch.clientPhone;
+    if (patch.service !== undefined) {
+      dbPatch.service      = patch.service?.name || "Serviço";
+      dbPatch.service_data = patch.service;
+      dbPatch.price        = patch.service?.price || 0;
+    }
+    if (patch.barber !== undefined)      dbPatch.barber_id = patch.barber?.id || null;
+    if (patch.status !== undefined)      dbPatch.status    = patch.status;
+    if (patch.paid !== undefined)        dbPatch.paid      = patch.paid;
+    if (patch.notes !== undefined)       dbPatch.notes     = patch.notes;
+    if (patch.date !== undefined || patch.time !== undefined) {
+      // precisamos do appt atual pra montar o timestamp
+      const current = appts.find(a => a.id === id);
+      if (current) {
+        const date = patch.date !== undefined ? patch.date : current.date;
+        const time = patch.time !== undefined ? patch.time : current.time;
+        const [Y, M, D] = date.split("-").map(Number);
+        const [hh, mm] = time.split(":").map(Number);
+        dbPatch.date = new Date(Y, (M || 1) - 1, D || 1, hh || 0, mm || 0).toISOString();
+        dbPatch.time = time;
+      }
+    }
+    const { error } = await supabase.from("appointments").update(dbPatch).eq("id", id);
+    if (error) { console.error("[fadein] updateAppt:", error); return; }
+    // Atualiza state local imediatamente
+    setAppts(prev => prev.map(a => a.id === id ? { ...a, ...patch } : a));
+  }, [appts]);
+
+  const cancelAppt = useCallback(async (id) => {
+    const { error } = await supabase.from("appointments").update({ status: "cancelled" }).eq("id", id);
+    if (error) { console.error("[fadein] cancelAppt:", error); return; }
+    setAppts(prev => prev.map(a => a.id === id ? { ...a, status: "cancelled" } : a));
+  }, []);
 
   // ── Carrega shop do Supabase para um user_id ─────────────────────────────
   const loadShopForUser = useCallback(async (uid) => {
@@ -2708,6 +2953,45 @@ export default function App() {
     return () => { active = false; sub.subscription.unsubscribe(); };
   }, [loadShopForUser]);
 
+  // ── Carrega barbeiros e agendamentos sempre que o shop mudar ─────────────
+  useEffect(() => {
+    if (!shop?.id) { setBarbersState([]); setAppts([]); return; }
+    (async () => {
+      // 1) carrega barbeiros primeiro (necessário pra resolver appts.barber)
+      await loadBarbers(shop.id);
+    })();
+  }, [shop?.id, loadBarbers]);
+
+  // Quando barbeiros mudam (após shop), recarrega agendamentos com a lista atualizada
+  useEffect(() => {
+    if (shop?.id && barbers.length >= 0) {
+      loadAppts(shop.id, barbers);
+    }
+  }, [shop?.id, barbers, loadAppts]);
+
+  // Helpers expostos pra Config: criar/editar/excluir barbeiros
+  const addBarber = useCallback(async (data) => {
+    if (!shop?.id) return;
+    const { data: created, error } = await supabase.from("barbers")
+      .insert({ shop_id: shop.id, name: data.name, role: data.role || "Barbeiro", commission: data.commission || 50, active: true })
+      .select().maybeSingle();
+    if (error) { console.error("[fadein] addBarber:", error); return; }
+    if (created) await loadBarbers(shop.id);
+  }, [shop?.id, loadBarbers]);
+
+  const updateBarber = useCallback(async (id, data) => {
+    const { error } = await supabase.from("barbers").update(data).eq("id", id);
+    if (error) { console.error("[fadein] updateBarber:", error); return; }
+    if (shop?.id) await loadBarbers(shop.id);
+  }, [shop?.id, loadBarbers]);
+
+  const deleteBarber = useCallback(async (id) => {
+    // soft delete: desativa em vez de excluir, para preservar histórico
+    const { error } = await supabase.from("barbers").update({ active: false }).eq("id", id);
+    if (error) { console.error("[fadein] deleteBarber:", error); return; }
+    if (shop?.id) await loadBarbers(shop.id);
+  }, [shop?.id, loadBarbers]);
+
   // ── PERSISTÊNCIA local (services, clients, products, appts, txns) ───────
   // Carrega ao logar
   useEffect(() => {
@@ -2720,24 +3004,24 @@ export default function App() {
         if (data.services) setServices(data.services);
         if (data.clients)  setClients(data.clients);
         if (data.products) setProducts(data.products);
-        if (data.appts)    setAppts(data.appts);
+        // appts: vem do Supabase, não restaura do localStorage
         if (data.txns)     setTxns(data.txns);
       }
     } catch (e) { /* primeira vez, sem dados ainda */ }
     setHydrated(true);
   }, [shop, hydrated]);
 
-  // Salva quando muda algo (debounced)
+  // Salva quando muda algo (debounced) — appts NÃO entra aqui (está no Supabase)
   useEffect(() => {
     if (!shop || !hydrated) return;
     const t = setTimeout(() => {
       try {
         const key = "fadein:shop:" + shop.id + ":data";
-        localStorage.setItem(key, JSON.stringify({ services, clients, products, appts, txns }));
+        localStorage.setItem(key, JSON.stringify({ services, clients, products, txns }));
       } catch (e) { /* ignora (quota etc.) */ }
     }, 600);
     return () => clearTimeout(t);
-  }, [shop, hydrated, services, clients, products, appts, txns]);
+  }, [shop, hydrated, services, clients, products, txns]);
 
   // Tela de loading enquanto verifica sessão
   if (!authReady) return (
@@ -2849,13 +3133,13 @@ export default function App() {
         overflowY: "auto", maxHeight: "100vh",
       }}>
         {page === "dashboard"  && <Dashboard  appts={appts} txns={txns} services={services} navigate={setPage} />}
-        {page === "agenda"     && <Agenda     appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} setTxns={setTxns} />}
+        {page === "agenda"     && <Agenda     appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} setTxns={setTxns} barbers={barbers} createAppt={createAppt} updateAppt={updateAppt} cancelAppt={cancelAppt} />}
         {page === "financeiro" && <Financeiro txns={txns}   setTxns={setTxns}   navigate={setPage} />}
-        {page === "comissoes"  && <Comissoes  txns={txns}   appts={appts}       services={services} setServices={setServices} />}
+        {page === "comissoes"  && <Comissoes  txns={txns}   appts={appts}       services={services} setServices={setServices} barbers={barbers} />}
         {page === "estoque"    && <Estoque    products={products} setProducts={setProducts} />}
-        {page === "clientes"   && <Clientes   clients={clients}   setClients={setClients}   appts={appts} navigate={setPage} />}
-        {page === "link"       && <LinkAgendamento shop={shop} appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} />}
-        {page === "config"     && <Config     shop={shop} services={services} setServices={setServices} onLogout={() => supabase.auth.signOut()} />}
+        {page === "clientes"   && <Clientes   clients={clients}   setClients={setClients}   appts={appts} navigate={setPage} barbers={barbers} />}
+        {page === "link"       && <LinkAgendamento shop={shop} appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} barbers={barbers} createAppt={createAppt} />}
+        {page === "config"     && <Config     shop={shop} services={services} setServices={setServices} onLogout={() => supabase.auth.signOut()} barbers={barbers} addBarber={addBarber} updateBarber={updateBarber} deleteBarber={deleteBarber} />}
       </main>
     </div>
     </>
