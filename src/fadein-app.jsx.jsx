@@ -183,7 +183,7 @@ function fmtWeekday(ds) { return parseDS(ds).toLocaleDateString("pt-BR", { weekd
 function fmtFull(ds) { return parseDS(ds).toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }); }
 function fmtMoney(n) { return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n); }
 
-const BASE_DATE = new Date(2026, 3, 28); // Apr 28 2026
+const BASE_DATE = new Date(); // hoje, tempo real
 const TODAY_DS  = toDS(BASE_DATE);
 
 function isPast(ds) { return ds < TODAY_DS; }

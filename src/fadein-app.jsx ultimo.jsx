@@ -594,44 +594,157 @@ function ConfirmDialog({ open, title, message, onConfirm, onCancel, danger }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // LOGIN
 // ═══════════════════════════════════════════════════════════════════════════
+function ResetPassword({ onDone }) {
+  const [pw, setPw]       = useState("");
+  const [pw2, setPw2]     = useState("");
+  const [err, setErr]     = useState("");
+  const [show, setShow]   = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [done, setDone]   = useState(false);
+
+  async function submit() {
+    if (pw.length < 6) { setErr("Senha deve ter pelo menos 6 caracteres."); return; }
+    if (pw !== pw2)    { setErr("As senhas não coincidem."); return; }
+    setLoading(true); setErr("");
+    try {
+      const { error } = await supabase.auth.updateUser({ password: pw });
+      if (error) throw error;
+      setDone(true);
+      // Limpa hash da URL (remove tokens)
+      window.history.replaceState({}, document.title, window.location.pathname);
+      // Volta pra login depois de 2s
+      setTimeout(() => { onDone(); }, 2000);
+    } catch (ex) {
+      setErr(ex?.message || "Erro ao redefinir senha.");
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{
+      minHeight: "100vh", background: C.bg,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: "system-ui, -apple-system, sans-serif", padding: 20,
+    }}>
+      <div className="fade-in" style={{ width: "100%", maxWidth: 380 }}>
+        <div style={{ marginBottom: 36, display: "flex", justifyContent: "center" }}>
+          <Logo scale={1.4} />
+        </div>
+        <h2 style={{ color: C.fg, fontSize: 18, textAlign: "center", margin: "0 0 8px" }}>
+          Definir nova senha
+        </h2>
+        <p style={{ color: C.fgMuted, fontSize: 13, textAlign: "center", marginBottom: 24 }}>
+          Escolha uma senha forte para sua conta.
+        </p>
+
+        {done ? (
+          <div style={{
+            padding: "14px 18px", borderRadius: 10, textAlign: "center",
+            background: C.greenDim, border: "1px solid " + C.green + "40",
+            color: C.green, fontSize: 13, lineHeight: 1.4,
+          }}>
+            ✓ Senha alterada! Redirecionando...
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <Field label="Nova senha">
+              <div style={{ position: "relative" }}>
+                <input
+                  type={show ? "text" : "password"}
+                  value={pw}
+                  onChange={e => { setPw(e.target.value); setErr(""); }}
+                  placeholder="Mínimo 6 caracteres"
+                  autoComplete="new-password"
+                  disabled={loading}
+                  style={{
+                    width: "100%", padding: "12px 46px 12px 14px", boxSizing: "border-box",
+                    borderRadius: 10, border: "1px solid " + (err ? C.red : C.border),
+                    background: C.card, color: C.fg, fontSize: 15, outline: "none",
+                    fontFamily: "inherit",
+                  }}
+                />
+                <button type="button" onClick={() => setShow(v => !v)}
+                  style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: C.fgMuted, cursor: "pointer", display: "flex", alignItems: "center", padding: 0 }}>
+                  {show ? Ic.eyeShut : Ic.eyeOpen}
+                </button>
+              </div>
+            </Field>
+            <Field label="Confirmar nova senha" hint={err}>
+              <input
+                type={show ? "text" : "password"}
+                value={pw2}
+                onChange={e => { setPw2(e.target.value); setErr(""); }}
+                onKeyDown={e => e.key === "Enter" && submit()}
+                placeholder="Digite novamente"
+                autoComplete="new-password"
+                disabled={loading}
+                style={{
+                  width: "100%", padding: "12px 14px", boxSizing: "border-box",
+                  borderRadius: 10, border: "1px solid " + (err ? C.red : C.border),
+                  background: C.card, color: C.fg, fontSize: 15, outline: "none",
+                  fontFamily: "inherit",
+                }}
+              />
+            </Field>
+            <Btn onClick={submit} disabled={loading} full>
+              {loading ? "Salvando..." : "Salvar nova senha"}
+            </Btn>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Login({ onLogin }) {
-  const [tab, setTab]     = useState("login"); // "login" | "signup"
+  const [tab, setTab]     = useState("login"); // "login" | "signup" | "reset"
   const [email, setEmail] = useState("");
   const [pw, setPw]       = useState("");
   const [shopName, setShopName] = useState("");
   const [err, setErr]     = useState("");
+  const [okMsg, setOkMsg] = useState("");
   const [show, setShow]   = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function attempt() {
     const e = email.trim().toLowerCase();
-    const p = pw;
-    if (!e || !p) { setErr("Preencha email e senha."); return; }
+    if (!e) { setErr("Informe o email."); return; }
+    if (tab !== "reset" && !pw) { setErr("Preencha a senha."); return; }
     if (tab === "signup" && !shopName.trim()) { setErr("Informe o nome da barbearia."); return; }
     setLoading(true);
     setErr("");
+    setOkMsg("");
     try {
       if (tab === "login") {
-        const { data, error } = await supabase.auth.signInWithPassword({ email: e, password: p });
+        const { error } = await supabase.auth.signInWithPassword({ email: e, password: pw });
         if (error) throw error;
         // o onAuthStateChange no App vai pegar a sessão e chamar onLogin
-      } else {
+      } else if (tab === "signup") {
         const { data, error } = await supabase.auth.signUp({
-          email: e, password: p,
+          email: e, password: pw,
           options: { data: { shop_name: shopName.trim() } },
         });
         if (error) throw error;
         if (!data.session) {
-          setErr("Conta criada! Verifique seu email para confirmar.");
+          setOkMsg("Conta criada! Verifique seu email para confirmar.");
           setLoading(false);
           return;
         }
+      } else if (tab === "reset") {
+        const { error } = await supabase.auth.resetPasswordForEmail(e, {
+          redirectTo: window.location.origin,
+        });
+        if (error) throw error;
+        setOkMsg("✓ Enviamos um link para o seu email. Confira a caixa de entrada (e o spam).");
+        setLoading(false);
+        return;
       }
     } catch (ex) {
       const msg = ex?.message || "Erro ao autenticar.";
       setErr(msg.includes("Invalid login") ? "Email ou senha incorretos." :
              msg.includes("already registered") ? "Este email já tem cadastro." :
              msg.includes("Password should") ? "Senha deve ter pelo menos 6 caracteres." :
+             msg.includes("rate limit") ? "Muitas tentativas. Aguarde alguns minutos." :
              msg);
       setLoading(false);
     }
@@ -685,59 +798,81 @@ function Login({ onLogin }) {
               />
             </Field>
           )}
-          <Field label="Email">
+          <Field label="Email" hint={tab === "reset" ? err : ""}>
             <input
               type="email"
               value={email}
               onChange={e => { setEmail(e.target.value); setErr(""); }}
+              onKeyDown={e => e.key === "Enter" && tab === "reset" && attempt()}
               placeholder="seu@email.com"
               autoComplete="email"
               disabled={loading}
               style={{
                 width: "100%", padding: "12px 14px", boxSizing: "border-box",
-                borderRadius: 10, border: "1px solid " + C.border,
+                borderRadius: 10, border: "1px solid " + (err && tab === "reset" ? C.red : C.border),
                 background: C.card, color: C.fg, fontSize: 15, outline: "none",
                 fontFamily: "inherit",
               }}
             />
           </Field>
-          <Field label="Senha" hint={err}>
-            <div style={{ position: "relative" }}>
-              <input
-                type={show ? "text" : "password"}
-                value={pw}
-                onChange={e => { setPw(e.target.value); setErr(""); }}
-                onKeyDown={e => e.key === "Enter" && attempt()}
-                placeholder={tab === "signup" ? "Mínimo 6 caracteres" : "Sua senha"}
-                autoComplete={tab === "signup" ? "new-password" : "current-password"}
-                disabled={loading}
-                style={{
-                  width: "100%", padding: "12px 46px 12px 14px", boxSizing: "border-box",
-                  borderRadius: 10, border: "1px solid " + (err ? C.red : C.border),
-                  background: C.card, color: C.fg, fontSize: 15, outline: "none",
-                  fontFamily: "inherit",
-                }}
-              />
-              <button type="button" onClick={() => setShow(v => !v)}
-                style={{
-                  position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
-                  background: "none", border: "none", color: C.fgMuted, cursor: "pointer",
-                  display: "flex", alignItems: "center", padding: 0,
-                }}
-              >{show ? Ic.eyeShut : Ic.eyeOpen}</button>
-            </div>
-          </Field>
+          {tab !== "reset" && (
+            <Field label="Senha" hint={err}>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={show ? "text" : "password"}
+                  value={pw}
+                  onChange={e => { setPw(e.target.value); setErr(""); }}
+                  onKeyDown={e => e.key === "Enter" && attempt()}
+                  placeholder={tab === "signup" ? "Mínimo 6 caracteres" : "Sua senha"}
+                  autoComplete={tab === "signup" ? "new-password" : "current-password"}
+                  disabled={loading}
+                  style={{
+                    width: "100%", padding: "12px 46px 12px 14px", boxSizing: "border-box",
+                    borderRadius: 10, border: "1px solid " + (err ? C.red : C.border),
+                    background: C.card, color: C.fg, fontSize: 15, outline: "none",
+                    fontFamily: "inherit",
+                  }}
+                />
+                <button type="button" onClick={() => setShow(v => !v)}
+                  style={{
+                    position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+                    background: "none", border: "none", color: C.fgMuted, cursor: "pointer",
+                    display: "flex", alignItems: "center", padding: 0,
+                  }}
+                >{show ? Ic.eyeShut : Ic.eyeOpen}</button>
+              </div>
+            </Field>
+          )}
+
+          {okMsg && (
+            <div style={{
+              padding: "10px 14px", borderRadius: 10,
+              background: C.greenDim, border: "1px solid " + C.green + "40",
+              color: C.green, fontSize: 12, lineHeight: 1.4,
+            }}>{okMsg}</div>
+          )}
+
           <Btn onClick={attempt} disabled={loading} full>
-            {loading ? "Aguarde..." : (tab === "login" ? "Entrar" : "Criar conta")}
+            {loading ? "Aguarde..." :
+              tab === "login"  ? "Entrar" :
+              tab === "signup" ? "Criar conta" :
+                                 "Enviar link de recuperação"}
           </Btn>
+
+          {tab === "login" && (
+            <p style={{ textAlign: "center", marginTop: -2 }}>
+              <span onClick={() => { setTab("reset"); setErr(""); setOkMsg(""); }}
+                style={{ color: C.fgMuted, cursor: "pointer", fontSize: 12 }}>
+                Esqueci minha senha
+              </span>
+            </p>
+          )}
         </div>
 
         <p style={{ marginTop: 24, fontSize: 11, color: C.fgMuted, textAlign: "center" }}>
-          {tab === "login" ? "Não tem conta? " : "Já tem conta? "}
-          <span onClick={() => { setTab(tab === "login" ? "signup" : "login"); setErr(""); }}
-            style={{ color: C.gold, cursor: "pointer", fontWeight: 600 }}>
-            {tab === "login" ? "Criar agora" : "Fazer login"}
-          </span>
+          {tab === "login"  && <>Não tem conta? <span onClick={() => { setTab("signup"); setErr(""); setOkMsg(""); }} style={{ color: C.gold, cursor: "pointer", fontWeight: 600 }}>Criar agora</span></>}
+          {tab === "signup" && <>Já tem conta? <span onClick={() => { setTab("login"); setErr(""); setOkMsg(""); }} style={{ color: C.gold, cursor: "pointer", fontWeight: 600 }}>Fazer login</span></>}
+          {tab === "reset"  && <>Lembrou da senha? <span onClick={() => { setTab("login"); setErr(""); setOkMsg(""); }} style={{ color: C.gold, cursor: "pointer", fontWeight: 600 }}>Fazer login</span></>}
         </p>
       </div>
     </div>
@@ -2211,9 +2346,13 @@ function Estoque({ products, setProducts }) {
 function Clientes({ clients, setClients, appts, navigate, barbers, createClient, updateClient, deleteClient }) {
   const [q, setQ]         = useState("");
   const [sel, setSel]     = useState(null);
-  const [modal, setModal] = useState(false);
+  const [modal, setModal] = useState(false);       // novo cliente
+  const [editModal, setEditModal] = useState(false); // editar cliente
+  const [delModal, setDelModal]   = useState(null); // confirma exclusão
   const [filter, setFilter] = useState("all");
   const [form, setForm]   = useState({ name: "", phone: "", notes: "" });
+  const [editForm, setEditForm] = useState({ name: "", phone: "", notes: "", fav: "" });
+  const [saving, setSaving] = useState(false);
 
   const enriched = clients.map(c => {
     const d = diffDays(c.lastVisit);
@@ -2229,6 +2368,7 @@ function Clientes({ clients, setClients, appts, navigate, barbers, createClient,
 
   async function add() {
     if (!form.name.trim()) return;
+    setSaving(true);
     await createClient({
       name: form.name.trim(),
       phone: form.phone || "",
@@ -2237,7 +2377,41 @@ function Clientes({ clients, setClients, appts, navigate, barbers, createClient,
       visits: 0,
       fav: barbers[0]?.id || null,
     });
+    setSaving(false);
     setModal(false); setForm({ name: "", phone: "", notes: "" });
+  }
+
+  function openEdit() {
+    if (!sc) return;
+    setEditForm({
+      name: sc.name,
+      phone: sc.phone || "",
+      notes: sc.notes || "",
+      fav: sc.fav || "",
+    });
+    setEditModal(true);
+  }
+
+  async function saveEdit() {
+    if (!editForm.name.trim()) return;
+    setSaving(true);
+    await updateClient(sel, {
+      name: editForm.name.trim(),
+      phone: editForm.phone || "",
+      notes: editForm.notes || "",
+      fav: editForm.fav || null,
+    });
+    setSaving(false);
+    setEditModal(false);
+  }
+
+  async function confirmDelete() {
+    if (!delModal) return;
+    setSaving(true);
+    await deleteClient(delModal.id);
+    setSaving(false);
+    setDelModal(null);
+    setSel(null);
   }
 
   return (
@@ -2371,6 +2545,8 @@ function Clientes({ clients, setClients, appts, navigate, barbers, createClient,
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Btn sm v="ghost" icon={Ic.whatsapp}>WhatsApp</Btn>
               <Btn sm v="ghost" icon={Ic.calendar} onClick={() => navigate("agenda")}>Agendar</Btn>
+              <Btn sm v="ghost" icon={Ic.edit} onClick={openEdit}>Editar</Btn>
+              <Btn sm v="danger" icon={Ic.trash} onClick={() => setDelModal(sc)}>Excluir</Btn>
             </div>
           </div>
         )}
@@ -2382,11 +2558,35 @@ function Clientes({ clients, setClients, appts, navigate, barbers, createClient,
           <Inp label="Telefone / WhatsApp" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))} placeholder="(51) 99999-0000" />
           <Inp label="Observações" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))} placeholder="Tipo de corte, alergias, preferências..." />
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-            <Btn onClick={add} full>Salvar cliente</Btn>
-            <Btn v="ghost" onClick={() => setModal(false)}>Cancelar</Btn>
+            <Btn onClick={add} disabled={saving} full>{saving ? "Salvando..." : "Salvar cliente"}</Btn>
+            <Btn v="ghost" onClick={() => setModal(false)} disabled={saving}>Cancelar</Btn>
           </div>
         </Modal>
       )}
+
+      {editModal && (
+        <Modal title="Editar cliente" onClose={() => setEditModal(false)}>
+          <Inp label="Nome completo" value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} placeholder="Ex: João Silva" />
+          <Inp label="Telefone / WhatsApp" value={editForm.phone} onChange={e => setEditForm(p => ({ ...p, phone: e.target.value }))} placeholder="(51) 99999-0000" />
+          <Sel label="Barbeiro favorito" value={editForm.fav}
+            onChange={e => setEditForm(p => ({ ...p, fav: e.target.value }))}
+            options={[{ v: "", l: "— nenhum —" }, ...barbers.map(b => ({ v: b.id, l: b.name }))]} />
+          <Inp label="Observações" value={editForm.notes} onChange={e => setEditForm(p => ({ ...p, notes: e.target.value }))} placeholder="Tipo de corte, alergias, preferências..." />
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            <Btn onClick={saveEdit} disabled={saving} full>{saving ? "Salvando..." : "Salvar alterações"}</Btn>
+            <Btn v="ghost" onClick={() => setEditModal(false)} disabled={saving}>Cancelar</Btn>
+          </div>
+        </Modal>
+      )}
+
+      <ConfirmDialog
+        open={!!delModal}
+        title="Excluir cliente?"
+        message={delModal ? `Tem certeza que deseja excluir "${delModal.name}"? Esta ação não pode ser desfeita. O histórico de agendamentos será preservado.` : ""}
+        onConfirm={confirmDelete}
+        onCancel={() => setDelModal(null)}
+        danger
+      />
     </div>
   );
 }
@@ -2819,6 +3019,7 @@ export default function App() {
   const [shop,     setShop]     = useState(null);
   const [barbers,  setBarbersState] = useState([]); // carregado do Supabase
   const [authReady, setAuthReady] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState(false);
   const [page,     setPage]     = useState("dashboard");
   const [services, setServices] = useState([]); // carregado do Supabase
   const [clients,  setClients]  = useState([]); // carregado do Supabase
@@ -3271,7 +3472,11 @@ export default function App() {
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log("[fadein] auth event:", event, session?.user?.id || "(none)");
-      if (event === "SIGNED_OUT") { setShop(null); setHydrated(false); return; }
+      if (event === "PASSWORD_RECOVERY") {
+        setRecoveryMode(true);
+        return;
+      }
+      if (event === "SIGNED_OUT") { setShop(null); setHydrated(false); setRecoveryMode(false); return; }
       await loadShopForUser(session?.user?.id);
       setPage("dashboard");
       setHydrated(false);
@@ -3361,6 +3566,13 @@ export default function App() {
           <p style={{ color: C.fgMuted, fontSize: 13, marginTop: 20 }} className="pulse">Carregando...</p>
         </div>
       </div>
+    </>
+  );
+
+  if (recoveryMode) return (
+    <>
+      <style>{GLOBAL_CSS}</style>
+      <ResetPassword onDone={() => setRecoveryMode(false)} />
     </>
   );
 
