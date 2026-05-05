@@ -183,7 +183,7 @@ function fmtWeekday(ds) { return parseDS(ds).toLocaleDateString("pt-BR", { weekd
 function fmtFull(ds) { return parseDS(ds).toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }); }
 function fmtMoney(n) { return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n); }
 
-const BASE_DATE = new Date(2026, 3, 28); // Apr 28 2026
+const BASE_DATE = new Date(); // hoje, tempo real
 const TODAY_DS  = toDS(BASE_DATE);
 
 function isPast(ds) { return ds < TODAY_DS; }
@@ -374,6 +374,7 @@ const Ic = {
   filter:    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 3h10M3.5 7h7M5 11h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
   eyeOpen:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3"/></svg>,
   eyeShut:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8s2.5-5 7-5 7 5 7 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M3 11.5C4.3 10 6 9 8 9s3.7 1 5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><line x1="3" y1="3" x2="13" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>,
+  trendUp:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1.5 11l4-4 3 3 6-6M10.5 4h4v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -888,18 +889,33 @@ function Dashboard({ appts, txns, services, navigate }) {
 
   const todayAppts = appts.filter(a => a.date === TODAY_DS);
   const m30Txns    = txns.filter(t => t.date >= toDS(addDays(BASE_DATE, -30)));
+  const m60_30Txns = txns.filter(t => t.date >= toDS(addDays(BASE_DATE, -60)) && t.date < toDS(addDays(BASE_DATE, -30)));
   const revenue    = m30Txns.filter(t => !t.out).reduce((s, t) => s + t.amount, 0);
+  const revPrev    = m60_30Txns.filter(t => !t.out).reduce((s, t) => s + t.amount, 0);
   const expenses   = m30Txns.filter(t => t.out).reduce((s, t) => s + t.amount, 0);
   const inCount    = m30Txns.filter(t => !t.out).length;
   const avgTicket  = inCount > 0 ? revenue / inCount : 0;
+  const trendPct   = revPrev > 0 ? Math.round(((revenue - revPrev) / revPrev) * 100) : (revenue > 0 ? 100 : 0);
 
-  // Próximo cliente (tempo até)
+  // Próximo cliente
   const nextAppt = useMemo(() => {
     const future = todayAppts
       .filter(a => a.status === "confirmed" || a.status === "pending")
       .sort((a, b) => a.time.localeCompare(b.time));
     return future[0];
   }, [todayAppts]);
+
+  // Sparkline 30d (mini gráfico no hero)
+  const sparkPts = useMemo(() => {
+    const arr = [];
+    for (let i = 29; i >= 0; i--) {
+      const ds  = toDS(addDays(BASE_DATE, -i));
+      const val = txns.filter(t => t.date === ds && !t.out).reduce((s, t) => s + t.amount, 0);
+      arr.push(val);
+    }
+    return arr;
+  }, [txns]);
+  const sparkMax = Math.max(...sparkPts, 1);
 
   // Chart data
   const pts = useMemo(() => {
@@ -937,50 +953,156 @@ function Dashboard({ appts, txns, services, navigate }) {
   }, [m30Txns]);
   const svcMax = svcRev.length ? svcRev[0][1] : 1;
 
-  const SVG_W = 600, SVG_H = 140, BAR_H = SVG_H - 24;
+  // Area chart points
+  const SVG_W = 600, SVG_H = 180, PAD = 16;
+  const linePts = pts.map((p, i) => {
+    const x = PAD + (i / Math.max(pts.length - 1, 1)) * (SVG_W - PAD * 2);
+    const y = SVG_H - PAD - (p.val / maxVal) * (SVG_H - PAD * 2);
+    return { x, y, ...p };
+  });
+  const linePath  = linePts.map((p, i) => (i === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ");
+  const areaPath  = linePath + " L" + (SVG_W - PAD) + " " + (SVG_H - PAD) + " L" + PAD + " " + (SVG_H - PAD) + " Z";
 
   return (
     <div className="fade-in">
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px", color: C.fg, fontFamily: "Georgia, serif" }}>Dashboard</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 700, margin: "0 0 4px", color: C.fg, letterSpacing: -0.5 }}>Visão geral</h1>
           <p style={{ fontSize: 13, color: C.fgMuted, margin: 0, textTransform: "capitalize" }}>{fmtFull(TODAY_DS)}</p>
         </div>
-        {nextAppt && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: 12,
-            background: C.goldDim, border: "1px solid " + C.goldBright + "40",
-            borderRadius: 12, padding: "10px 16px",
-          }}>
-            <div style={{ color: C.goldBright }}>{Ic.clock}</div>
-            <div>
-              <div style={{ fontSize: 10, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Próximo cliente</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: C.goldBright }}>
-                {nextAppt.time} · {nextAppt.client}
+      </div>
+
+      {/* HERO: Faturamento grande + 3 KPIs auxiliares */}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 1.4fr) minmax(220px, 1fr)", gap: 14, marginBottom: 14 }} className="grid-responsive">
+        {/* Hero card */}
+        <div style={{
+          background: "linear-gradient(135deg, " + C.card + " 0%, " + C.card2 + " 100%)",
+          border: "1px solid " + C.borderHi, borderRadius: 16,
+          padding: "24px 26px", position: "relative", overflow: "hidden",
+        }}>
+          {/* decorative bars (identidade Fadein) */}
+          <svg width="80" height="60" viewBox="0 0 80 60" style={{ position: "absolute", top: 18, right: 22, opacity: 0.12 }}>
+            {[
+              { x: 0,  h: 18 }, { x: 14, h: 28 }, { x: 28, h: 38 },
+              { x: 42, h: 50 }, { x: 56, h: 60 },
+            ].map((b, i) => (
+              <rect key={i} x={b.x} y={60 - b.h} width="10" height={b.h} rx="2" fill={C.goldBright} />
+            ))}
+          </svg>
+
+          <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 8 }}>
+            Faturamento · últimos 30 dias
+          </div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+            <span style={{ fontSize: 38, fontWeight: 700, color: C.goldBright, letterSpacing: -1, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+              {fmtMoney(revenue)}
+            </span>
+            <span style={{
+              fontSize: 12, fontWeight: 700,
+              padding: "3px 9px", borderRadius: 14,
+              background: trendPct >= 0 ? C.greenDim : C.redDim,
+              color: trendPct >= 0 ? C.green : C.red,
+              display: "inline-flex", alignItems: "center", gap: 3,
+            }}>
+              {trendPct >= 0 ? "↑" : "↓"} {Math.abs(trendPct)}%
+            </span>
+          </div>
+
+          {/* sparkline 30d embutido */}
+          <svg width="100%" height="48" viewBox={"0 0 200 48"} preserveAspectRatio="none" style={{ display: "block" }}>
+            <defs>
+              <linearGradient id="sparkArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"  stopColor={C.goldBright} stopOpacity="0.35" />
+                <stop offset="100%" stopColor={C.goldBright} stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            {(() => {
+              const w = 200, h = 48;
+              const pts = sparkPts.map((v, i) => {
+                const x = (i / Math.max(sparkPts.length - 1, 1)) * w;
+                const y = h - (v / sparkMax) * (h - 4) - 2;
+                return [x, y];
+              });
+              const lp = pts.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+              const ap = lp + " L" + w + " " + h + " L0 " + h + " Z";
+              return (
+                <>
+                  <path d={ap} fill="url(#sparkArea)" />
+                  <path d={lp} fill="none" stroke={C.goldBright} strokeWidth="1.6" strokeLinejoin="round" />
+                </>
+              );
+            })()}
+          </svg>
+
+          <div style={{ fontSize: 11, color: C.fgMuted, marginTop: 4, fontStyle: "italic" }}>
+            vs {fmtMoney(revPrev)} no período anterior
+          </div>
+        </div>
+
+        {/* 3 mini-KPIs empilhados */}
+        <div style={{ display: "grid", gridTemplateRows: "1fr 1fr 1fr", gap: 8 }}>
+          {[
+            { label: "Hoje",          value: todayAppts.length, sub: "agendamentos", color: C.goldBright, icon: Ic.calendar },
+            { label: "Lucro 30d",     value: fmtMoney(revenue - expenses), sub: "receita − despesas", color: revenue > expenses ? C.green : C.red, icon: Ic.trendUp },
+            { label: "Ticket médio",  value: fmtMoney(avgTicket), sub: "por atendimento", color: C.fg, icon: Ic.money },
+          ].map((k, i) => (
+            <div key={i} style={{
+              background: C.card, border: "1px solid " + C.border, borderRadius: 12,
+              padding: "12px 16px", display: "flex", alignItems: "center", gap: 12,
+            }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 9,
+                background: k.color === C.fg ? C.bgSunken : k.color + "15",
+                color: k.color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+              }}>{k.icon}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 10, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>{k.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: k.color, lineHeight: 1.1, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{k.value}</div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{k.sub}</div>
               </div>
             </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Próximo cliente — quando existe, vira faixa de destaque */}
+      {nextAppt && (
+        <div onClick={() => navigate("agenda")} style={{
+          display: "flex", alignItems: "center", gap: 14,
+          background: "linear-gradient(90deg, " + C.goldDim + " 0%, transparent 100%)",
+          border: "1px solid " + C.goldBright + "30",
+          borderRadius: 12, padding: "12px 18px", marginBottom: 18, cursor: "pointer",
+        }}>
+          <div style={{
+            width: 42, height: 42, borderRadius: "50%",
+            background: nextAppt.barber.color + "30", color: nextAppt.barber.color,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 16, fontWeight: 700, flexShrink: 0,
+          }}>{nextAppt.barber.avatar}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 10, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>Próximo atendimento</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.fg, marginTop: 2 }}>
+              {nextAppt.client} <span style={{ color: C.fgMuted, fontWeight: 400 }}>· {nextAppt.service.name}</span>
+            </div>
           </div>
-        )}
-      </div>
+          <div style={{ textAlign: "right", flexShrink: 0 }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: C.goldBright, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{nextAppt.time}</div>
+            <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>{nextAppt.barber.name}</div>
+          </div>
+          <div style={{ color: C.goldBright }}>{Ic.chevR}</div>
+        </div>
+      )}
 
-      {/* KPIs */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 24 }}>
-        <KPI label="Faturamento 30d" value={fmtMoney(revenue)} note="↑ 12% vs anterior" up={true} accent />
-        <KPI label="Hoje" value={String(todayAppts.length) + " agendamentos"} note={todayAppts.filter(a => a.status === "done").length + " finalizados"} />
-        <KPI label="Lucro estimado" value={fmtMoney(revenue - expenses)} note="receita − despesas" up={revenue > expenses} />
-        <KPI label="Ticket médio" value={fmtMoney(avgTicket)} note="por atendimento" />
-      </div>
-
-      {/* Main chart */}
+      {/* Main chart - área com gradient (substitui barras) */}
       <div style={{
         background: C.card, border: "1px solid " + C.border, borderRadius: 14,
         padding: "20px 24px", marginBottom: 16,
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
           <div>
-            <div style={{ fontSize: 11, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.6 }}>Receita no período</div>
-            <div style={{ fontSize: 28, fontWeight: 700, color: C.goldBright, marginTop: 4, fontFamily: "Georgia, serif" }}>
+            <div style={{ fontSize: 11, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>Receita no período</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: C.goldBright, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
               {fmtMoney(totalPeriod)}
             </div>
           </div>
@@ -998,39 +1120,55 @@ function Dashboard({ appts, txns, services, navigate }) {
 
         <div style={{ position: "relative" }}>
           <svg width="100%" viewBox={"0 0 " + SVG_W + " " + SVG_H} style={{ display: "block", overflow: "visible" }}>
-            {[0.25, 0.5, 0.75, 1].map(f => (
-              <line key={f} x1="0" y1={BAR_H * (1 - f)} x2={SVG_W} y2={BAR_H * (1 - f)}
-                stroke={C.border} strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
+            <defs>
+              <linearGradient id="dashArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"  stopColor={C.goldBright} stopOpacity="0.4" />
+                <stop offset="100%" stopColor={C.goldBright} stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            {/* grid lines */}
+            {[0, 0.25, 0.5, 0.75, 1].map(f => (
+              <line key={f} x1={PAD} y1={PAD + (SVG_H - PAD * 2) * f} x2={SVG_W - PAD} y2={PAD + (SVG_H - PAD * 2) * f}
+                stroke={C.border} strokeWidth="1" strokeDasharray="3 3" opacity={f === 1 ? 0.8 : 0.4} />
             ))}
-            {pts.map((p, i) => {
-              const slotW = SVG_W / pts.length;
-              const bw    = Math.max(slotW * 0.6, 4);
-              const bx    = i * slotW + (slotW - bw) / 2;
-              const bh    = Math.max((p.val / maxVal) * (BAR_H - 6), 3);
-              const by    = BAR_H - bh;
+            {/* area + line */}
+            {linePts.length > 1 && (
+              <>
+                <path d={areaPath} fill="url(#dashArea)" />
+                <path d={linePath} fill="none" stroke={C.goldBright} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
+              </>
+            )}
+            {/* dots + hover */}
+            {linePts.map((p, i) => {
               const isToday = p.ds === TODAY_DS;
               const isHov   = hovBar === i;
               return (
                 <g key={p.ds} style={{ cursor: "pointer" }}
                    onMouseEnter={() => setHovBar(i)} onMouseLeave={() => setHovBar(null)}>
-                  <rect x={i * slotW} y={0} width={slotW} height={BAR_H} fill="transparent" />
-                  <rect x={bx} y={by} width={bw} height={bh} rx="3"
-                    fill={isToday ? C.goldBright : isHov ? C.goldBright + "C0" : C.goldBright + "40"}
-                    style={{ transition: "fill 0.12s" }} />
+                  <rect x={p.x - 14} y={0} width={28} height={SVG_H} fill="transparent" />
+                  <circle cx={p.x} cy={p.y}
+                    r={isHov || isToday ? 5 : 3.5}
+                    fill={isToday ? C.goldBright : C.card}
+                    stroke={C.goldBright} strokeWidth={isToday ? 0 : 2}
+                  />
                   {isHov && p.val > 0 && (
                     <g>
-                      <rect x={bx + bw / 2 - 50} y={by - 38} width={100} height={30} rx="6"
-                        fill={C.card2} stroke={C.borderHi} />
-                      <text x={bx + bw / 2} y={by - 24} textAnchor="middle" fontSize="9" fill={C.fgMuted}>{p.label}</text>
-                      <text x={bx + bw / 2} y={by - 12} textAnchor="middle" fontSize="11" fill={C.fg} fontWeight="700">
-                        {fmtMoney(p.val)}
-                      </text>
+                      <rect x={p.x - 50} y={p.y - 44} width="100" height="34" rx="6" fill={C.card2} stroke={C.borderHi} />
+                      <text x={p.x} y={p.y - 28} textAnchor="middle" fontSize="9" fill={C.fgMuted}>{p.label}</text>
+                      <text x={p.x} y={p.y - 16} textAnchor="middle" fontSize="11" fill={C.goldBright} fontWeight="700">{fmtMoney(p.val)}</text>
                     </g>
                   )}
-                  <text x={bx + bw / 2} y={SVG_H - 4} textAnchor="middle" fontSize="9" fill={C.fgMuted}>
-                    {range === "7d" ? p.label : (i % Math.ceil(pts.length / 6) === 0 ? p.label : "")}
-                  </text>
                 </g>
+              );
+            })}
+            {/* x-axis labels */}
+            {linePts.map((p, i) => {
+              const show = range === "7d" ? true : (i % Math.ceil(linePts.length / 6) === 0 || i === linePts.length - 1);
+              if (!show) return null;
+              return (
+                <text key={p.ds + "-l"} x={p.x} y={SVG_H - 2} textAnchor="middle" fontSize="9" fill={C.fgMuted}>
+                  {p.label}
+                </text>
               );
             })}
           </svg>
@@ -1055,7 +1193,7 @@ function Dashboard({ appts, txns, services, navigate }) {
                 padding: "8px 0", borderBottom: "1px solid " + C.border,
               }}>
                 <div style={{ width: 4, height: 32, borderRadius: 2, background: a.barber.color }} />
-                <span style={{ fontSize: 12, fontWeight: 700, color: C.goldBright, width: 40 }}>{a.time}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: C.goldBright, width: 44, fontVariantNumeric: "tabular-nums" }}>{a.time}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, color: C.fg, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.client}</div>
                   <div style={{ fontSize: 11, color: C.fgMuted }}>{a.service.name} · {a.barber.name}</div>
@@ -1068,16 +1206,26 @@ function Dashboard({ appts, txns, services, navigate }) {
 
         <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
           <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 14 }}>
-            Receita por serviço · 30d
+            Top serviços · 30d
           </div>
-          {svcRev.map(([name, val]) => (
-            <div key={name} style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ fontSize: 12, color: C.fg }}>{name}</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: C.goldBright }}>{fmtMoney(val)}</span>
+          {svcRev.length === 0 && (
+            <p style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: 20 }}>Sem dados ainda</p>
+          )}
+          {svcRev.map(([name, val], i) => (
+            <div key={name} style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
+                <span style={{ fontSize: 12, color: C.fg, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 10, color: C.muted, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>#{i + 1}</span>
+                  {name}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.goldBright, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(val)}</span>
               </div>
-              <div style={{ height: 5, borderRadius: 3, background: C.bgSunken, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: (val / svcMax * 100) + "%", background: C.goldBright, borderRadius: 3, transition: "width 0.6s" }} />
+              <div style={{ height: 6, borderRadius: 3, background: C.bgSunken, overflow: "hidden" }}>
+                <div style={{
+                  height: "100%", width: (val / svcMax * 100) + "%",
+                  background: "linear-gradient(90deg, " + C.gold + " 0%, " + C.goldBright + " 100%)",
+                  borderRadius: 3, transition: "width 0.6s",
+                }} />
               </div>
             </div>
           ))}
@@ -1087,7 +1235,6 @@ function Dashboard({ appts, txns, services, navigate }) {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <Btn icon={Ic.plus} onClick={() => navigate("agenda")}>Novo agendamento</Btn>
         <Btn v="ghost" icon={Ic.money} onClick={() => navigate("financeiro")}>Lançar entrada</Btn>
-        <Btn v="ghost" icon={Ic.box} onClick={() => navigate("estoque")}>Ver estoque</Btn>
         <Btn v="ghost" icon={Ic.link} onClick={() => navigate("link")}>Link de agendamento</Btn>
       </div>
     </div>
@@ -1313,7 +1460,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 16 }}>
         <div style={{ flex: 1, minWidth: 260 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px", color: C.fg, fontFamily: "Georgia, serif" }}>Agenda</h1>
+          <h1 style={{ fontSize: 26, fontWeight: 700, margin: "0 0 4px", color: C.fg, letterSpacing: -0.5 }}>Agenda</h1>
           <p style={{ fontSize: 13, color: C.fgMuted, margin: 0, textTransform: "capitalize" }}>
             {selDate === TODAY_DS && <span style={{ color: C.goldBright, fontWeight: 600 }}>Hoje · </span>}
             {fmtFull(selDate)}
@@ -1464,50 +1611,119 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
       </div>
 
       {/* Appointment list */}
-      <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, overflow: "hidden" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {shown.length === 0 ? (
-          <div style={{ padding: 56, textAlign: "center" }}>
-            <div style={{ color: C.faded, marginBottom: 12, fontSize: 32 }}>🗓</div>
+          <div style={{ background: C.card, border: "1px dashed " + C.border, borderRadius: 14, padding: 56, textAlign: "center" }}>
+            <div style={{ color: C.faded, marginBottom: 12, fontSize: 38 }}>🗓</div>
             <p style={{ color: C.fgMuted, fontSize: 14, margin: "0 0 16px" }}>Nenhum agendamento neste dia</p>
             {!dateIsPast && <Btn sm onClick={openNew} icon={Ic.plus}>Criar primeiro</Btn>}
           </div>
-        ) : shown.map(a => (
-          <div key={a.id} style={{
-            display: "flex", alignItems: "center", gap: 12,
-            padding: "14px 18px", borderBottom: "1px solid " + C.border,
-          }}>
-            <div style={{ width: 4, alignSelf: "stretch", borderRadius: 2, background: a.barber.color, flexShrink: 0 }} />
-            <span style={{ fontWeight: 700, fontSize: 15, color: C.goldBright, width: 50, flexShrink: 0, fontFamily: "Georgia, serif" }}>
-              {a.time}
-            </span>
-            <div style={{
-              width: 32, height: 32, borderRadius: "50%",
-              background: a.barber.color + "25", color: a.barber.color,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 12, fontWeight: 700, flexShrink: 0,
-            }}>{a.barber.avatar}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: C.fg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {a.client}
+        ) : shown.map(a => {
+          const isDone   = a.status === "done";
+          const isPaid   = a.paid;
+          const statusBg = a.status === "pending"   ? C.amberDim
+                         : a.status === "confirmed" ? C.goldDim
+                         : a.status === "done"      ? C.greenDim
+                         : C.bgSunken;
+          const statusFg = a.status === "pending"   ? C.amber
+                         : a.status === "confirmed" ? C.goldBright
+                         : a.status === "done"      ? C.green
+                         : C.fgMuted;
+          return (
+            <div key={a.id} style={{
+              display: "flex", alignItems: "stretch", gap: 0,
+              background: C.card, border: "1px solid " + C.border, borderRadius: 12,
+              overflow: "hidden", transition: "border-color 0.15s, transform 0.15s",
+              opacity: isDone ? 0.78 : 1,
+            }}>
+              {/* Faixa do barbeiro (esquerda) */}
+              <div style={{ width: 5, background: a.barber.color, flexShrink: 0 }} />
+
+              {/* Bloco da HORA (destaque) */}
+              <div style={{
+                width: 78, flexShrink: 0,
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                background: C.bgSunken,
+                padding: "14px 8px",
+              }}>
+                <div style={{
+                  fontSize: 22, fontWeight: 700, color: C.goldBright,
+                  fontVariantNumeric: "tabular-nums", lineHeight: 1, letterSpacing: -0.5,
+                }}>
+                  {a.time}
+                </div>
+                <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 4, fontWeight: 500 }}>
+                  {a.service.duration}min
+                </div>
               </div>
-              <div style={{ fontSize: 11, color: C.fgMuted }}>
-                {a.service.name} · {a.service.duration}min · {fmtMoney(a.service.price)} · {a.barber.name}
+
+              {/* Conteúdo principal */}
+              <div style={{ flex: 1, minWidth: 0, padding: "14px 16px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                {/* Cliente em destaque */}
+                <div style={{
+                  fontSize: 15, fontWeight: 700, color: C.fg,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  marginBottom: 4,
+                }}>
+                  {a.client}
+                </div>
+                {/* Linha secundária: serviço + barbeiro + preço */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
+                  <span style={{
+                    background: a.barber.color + "18", color: a.barber.color,
+                    padding: "2px 8px", borderRadius: 6, fontWeight: 600,
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                  }}>
+                    <span style={{
+                      width: 16, height: 16, borderRadius: "50%",
+                      background: a.barber.color + "30", color: a.barber.color,
+                      display: "inline-flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 9, fontWeight: 700,
+                    }}>{a.barber.avatar}</span>
+                    {a.barber.name}
+                  </span>
+                  <span style={{ color: C.fgMuted }}>·</span>
+                  <span style={{ color: C.fg, fontWeight: 500 }}>{a.service.name}</span>
+                  <span style={{ color: C.fgMuted }}>·</span>
+                  <span style={{ color: C.goldBright, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                    {fmtMoney(a.service.price)}
+                  </span>
+                </div>
               </div>
-            </div>
-            <StatusPill status={a.status} />
-            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-              {a.status === "pending" && !dateIsPast  && <Btn sm v="success" onClick={() => confirmIt(a.id)} title="Confirmar">{Ic.check}</Btn>}
-              {a.status !== "done"    && !dateIsPast  && <Btn sm v="primary" onClick={() => markDone(a.id)} title="Concluir e receber">💰 Receber</Btn>}
-              {a.status !== "done"    && !dateIsPast  && <Btn sm v="ghost" onClick={() => openEdit(a)} title="Editar">{Ic.edit}</Btn>}
-              {a.status !== "done"    && !dateIsPast  && <Btn sm v="danger" onClick={() => setConfirming(a)} title="Cancelar">{Ic.trash}</Btn>}
-              {a.status === "done"    && a.paidAmount && (
-                <span style={{ fontSize: 11, color: C.green, fontWeight: 700 }} title={"Pago via " + a.paidMethod}>
-                  {fmtMoney(a.paidAmount)}
+
+              {/* Status + Ações (direita) */}
+              <div style={{
+                display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "flex-end",
+                gap: 8, padding: "12px 14px", flexShrink: 0,
+              }}>
+                {/* Status pill */}
+                <span style={{
+                  fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 12,
+                  background: statusBg, color: statusFg, textTransform: "uppercase", letterSpacing: 0.5,
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                }}>
+                  {a.status === "done" ? "✓ Feito"
+                    : a.status === "confirmed" ? "● Confirmado"
+                    : a.status === "pending" ? "○ Pendente"
+                    : a.status}
                 </span>
-              )}
+                {/* Ações */}
+                {isDone && a.paidAmount ? (
+                  <span style={{ fontSize: 12, color: C.green, fontWeight: 700, fontVariantNumeric: "tabular-nums" }} title={"Pago via " + a.paidMethod}>
+                    +{fmtMoney(a.paidAmount)}
+                  </span>
+                ) : !dateIsPast && (
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {a.status === "pending" && <Btn sm v="success" onClick={() => confirmIt(a.id)} title="Confirmar">{Ic.check}</Btn>}
+                    {!isDone && <Btn sm v="primary" onClick={() => markDone(a.id)} title="Concluir e receber">💰</Btn>}
+                    {!isDone && <Btn sm v="ghost" onClick={() => openEdit(a)} title="Editar">{Ic.edit}</Btn>}
+                    {!isDone && <Btn sm v="danger" onClick={() => setConfirming(a)} title="Cancelar">{Ic.trash}</Btn>}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div style={{ fontSize: 12, color: C.fgMuted, marginTop: 14, display: "flex", gap: 16, justifyContent: "space-between", flexWrap: "wrap" }}>
@@ -1808,7 +2024,7 @@ function Financeiro({ txns, setTxns, navigate, createTxn, deleteTxn }) {
   return (
     <div className="fade-in">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: C.fg, fontFamily: "Georgia, serif" }}>Financeiro</h1>
+        <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0, color: C.fg, letterSpacing: -0.5 }}>Financeiro</h1>
         <div style={{ display: "flex", gap: 8 }}>
           <Btn sm v="ghost" icon={Ic.box} onClick={() => navigate("estoque")}>Estoque</Btn>
           <Btn sm icon={Ic.plus} onClick={() => setModal(true)}>Lançar</Btn>
@@ -1891,14 +2107,29 @@ function Financeiro({ txns, setTxns, navigate, createTxn, deleteTxn }) {
           })}
         </svg>
 
-        <div style={{ display: "flex", gap: 16, marginTop: 14, paddingTop: 14, borderTop: "1px solid " + C.border }}>
-          {Object.entries(byMethod).map(([m, v]) => (
-            <div key={m} style={{ flex: 1, textAlign: "center" }}>
-              <div style={{ fontSize: 10, color: C.fgMuted, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{m}</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: C.fg, marginBottom: 6 }}>{fmtMoney(v)}</div>
-              <div style={{ height: 3, borderRadius: 2, background: m === "Pix" ? C.green : m === "Cartão" ? C.blue : C.amber }} />
-            </div>
-          ))}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginTop: 16, paddingTop: 16, borderTop: "1px solid " + C.border }}>
+          {(() => {
+            const total = Object.values(byMethod).reduce((s, v) => s + v, 0);
+            return Object.entries(byMethod).map(([m, v]) => {
+              const pct = total > 0 ? (v / total) * 100 : 0;
+              const col = m === "Pix" ? C.green : m === "Cartão" ? C.blue : C.amber;
+              return (
+                <div key={m} style={{
+                  background: C.bgSunken, borderRadius: 10, padding: "14px 16px",
+                  border: "1px solid " + C.border,
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>{m}</span>
+                    <span style={{ fontSize: 10, color: col, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{pct.toFixed(0)}%</span>
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: C.fg, marginBottom: 8, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(v)}</div>
+                  <div style={{ height: 4, borderRadius: 2, background: C.bg, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: pct + "%", background: col, borderRadius: 2, transition: "width 0.6s" }} />
+                  </div>
+                </div>
+              );
+            });
+          })()}
         </div>
       </div>
 

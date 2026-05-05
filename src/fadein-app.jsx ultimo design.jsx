@@ -84,17 +84,6 @@ const GLOBAL_CSS = `
   button { transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s; }
   button:active:not(:disabled) { transform: scale(0.98); }
 
-  /* ────────────────────── DASHBOARD CHART RESIZING ────────────────────── */
-  /* Desktop: limita largura do SVG pra não esticar a altura */
-  .dashboard-chart-wrap { display: flex; justify-content: center; }
-  .dashboard-chart-wrap svg { width: 100%; max-width: 720px; }
-  @media (min-width: 769px) {
-    .dashboard-chart-wrap svg { max-height: 220px; }
-  }
-  @media (max-width: 768px) {
-    .dashboard-chart-wrap svg { max-height: 180px; }
-  }
-
   /* ────────────────────── MOBILE RESPONSIVO ────────────────────── */
   /* Layout shell */
   .app-shell { display: flex; min-height: 100vh; }
@@ -248,42 +237,16 @@ const CLIENTS_INIT = [
   { id: 8, name: "Felipe Alves",   phone: "(51) 99890-1234", lastVisit: "2026-04-27", visits: 19, fav: 3, notes: "Degradê alto, navalhado" },
 ];
 
-// ═══════════════════════════════════════════════════════════════════════════
-// PLANOS (gating de funcionalidades)
-// ═══════════════════════════════════════════════════════════════════════════
-const PLANS = {
-  starter: {
-    id: "starter",
-    name: "Starter",
-    price: 49,
-    maxBarbers: 1,
-    features: { agenda: true, linkPublico: true, clientes: true, dashboardBasico: true,
-                financeiro: false, comissoes: false, dashboardAvancado: false,
-                multiUnidade: false, whatsappAuto: false, relatorios: false, whiteLabel: false },
-  },
-  pro: {
-    id: "pro",
-    name: "Pro",
-    price: 99,
-    maxBarbers: 3,
-    features: { agenda: true, linkPublico: true, clientes: true, dashboardBasico: true,
-                financeiro: true, comissoes: true, dashboardAvancado: true,
-                multiUnidade: false, whatsappAuto: true, relatorios: false, whiteLabel: false },
-  },
-  premium: {
-    id: "premium",
-    name: "Premium",
-    price: 179,
-    maxBarbers: Infinity,
-    features: { agenda: true, linkPublico: true, clientes: true, dashboardBasico: true,
-                financeiro: true, comissoes: true, dashboardAvancado: true,
-                multiUnidade: true, whatsappAuto: true, relatorios: true, whiteLabel: true },
-  },
-};
-function hasFeature(plan, key) {
-  const p = PLANS[plan] || PLANS.starter;
-  return !!p.features[key];
-}
+const PRODUCTS_INIT = [
+  { id: 1, name: "Pomada Matte",       qty: 24, min: 5, cost: 18, price: 45, cat: "Pomada"  },
+  { id: 2, name: "Óleo de Barba",      qty: 12, min: 3, cost: 22, price: 55, cat: "Barba"   },
+  { id: 3, name: "Shampoo 5L",         qty: 3,  min: 2, cost: 35, price: 0,  cat: "Interno" },
+  { id: 4, name: "Cera Modeladora",    qty: 18, min: 5, cost: 15, price: 40, cat: "Pomada"  },
+  { id: 5, name: "Pós-barba",          qty: 8,  min: 3, cost: 12, price: 35, cat: "Barba"   },
+  { id: 6, name: "Lâminas (cx 100)",   qty: 2,  min: 3, cost: 25, price: 0,  cat: "Interno" },
+  { id: 7, name: "Gel Fixador",        qty: 15, min: 4, cost: 10, price: 30, cat: "Pomada"  },
+  { id: 8, name: "Toalha descartável", qty: 1,  min: 3, cost: 18, price: 0,  cat: "Interno" },
+];
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SEED DATA
@@ -411,7 +374,6 @@ const Ic = {
   filter:    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 3h10M3.5 7h7M5 11h4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
   eyeOpen:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3"/></svg>,
   eyeShut:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8s2.5-5 7-5 7 5 7 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M3 11.5C4.3 10 6 9 8 9s3.7 1 5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><line x1="3" y1="3" x2="13" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>,
-  trendUp:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1.5 11l4-4 3 3 6-6M10.5 4h4v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -923,44 +885,21 @@ function Login({ onLogin }) {
 function Dashboard({ appts, txns, services, navigate }) {
   const [range, setRange]     = useState("7d");
   const [hovBar, setHovBar]   = useState(null);
-  const [now, setNow]         = useState(new Date());
-
-  // Relógio em tempo real (atualiza a cada 30s — basta pra UX, não estressa o React)
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 30000);
-    return () => clearInterval(t);
-  }, []);
-  const nowTime = pad(now.getHours()) + ":" + pad(now.getMinutes());
 
   const todayAppts = appts.filter(a => a.date === TODAY_DS);
   const m30Txns    = txns.filter(t => t.date >= toDS(addDays(BASE_DATE, -30)));
-  const m60_30Txns = txns.filter(t => t.date >= toDS(addDays(BASE_DATE, -60)) && t.date < toDS(addDays(BASE_DATE, -30)));
   const revenue    = m30Txns.filter(t => !t.out).reduce((s, t) => s + t.amount, 0);
-  const revPrev    = m60_30Txns.filter(t => !t.out).reduce((s, t) => s + t.amount, 0);
   const expenses   = m30Txns.filter(t => t.out).reduce((s, t) => s + t.amount, 0);
   const inCount    = m30Txns.filter(t => !t.out).length;
   const avgTicket  = inCount > 0 ? revenue / inCount : 0;
-  const trendPct   = revPrev > 0 ? Math.round(((revenue - revPrev) / revPrev) * 100) : (revenue > 0 ? 100 : 0);
 
-  // Próximo cliente
+  // Próximo cliente (tempo até)
   const nextAppt = useMemo(() => {
     const future = todayAppts
       .filter(a => a.status === "confirmed" || a.status === "pending")
       .sort((a, b) => a.time.localeCompare(b.time));
     return future[0];
   }, [todayAppts]);
-
-  // Sparkline 30d (mini gráfico no hero)
-  const sparkPts = useMemo(() => {
-    const arr = [];
-    for (let i = 29; i >= 0; i--) {
-      const ds  = toDS(addDays(BASE_DATE, -i));
-      const val = txns.filter(t => t.date === ds && !t.out).reduce((s, t) => s + t.amount, 0);
-      arr.push(val);
-    }
-    return arr;
-  }, [txns]);
-  const sparkMax = Math.max(...sparkPts, 1);
 
   // Chart data
   const pts = useMemo(() => {
@@ -998,169 +937,50 @@ function Dashboard({ appts, txns, services, navigate }) {
   }, [m30Txns]);
   const svcMax = svcRev.length ? svcRev[0][1] : 1;
 
-  // Area chart points
-  const SVG_W = 600, SVG_H = 180, PAD = 16;
-  const linePts = pts.map((p, i) => {
-    const x = PAD + (i / Math.max(pts.length - 1, 1)) * (SVG_W - PAD * 2);
-    const y = SVG_H - PAD - (p.val / maxVal) * (SVG_H - PAD * 2);
-    return { x, y, ...p };
-  });
-  const linePath  = linePts.map((p, i) => (i === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ");
-  const areaPath  = linePath + " L" + (SVG_W - PAD) + " " + (SVG_H - PAD) + " L" + PAD + " " + (SVG_H - PAD) + " Z";
+  const SVG_W = 600, SVG_H = 140, BAR_H = SVG_H - 24;
 
   return (
     <div className="fade-in">
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 26, fontWeight: 700, margin: "0 0 4px", color: C.fg, letterSpacing: -0.5 }}>Visão geral</h1>
-          <p style={{ fontSize: 13, color: C.fgMuted, margin: 0, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ textTransform: "capitalize" }}>{fmtFull(TODAY_DS)}</span>
-            <span style={{ width: 3, height: 3, borderRadius: "50%", background: C.muted, display: "inline-block" }} />
-            <span style={{ color: C.goldBright, fontWeight: 600, fontVariantNumeric: "tabular-nums", letterSpacing: 0.3 }}>{nowTime}</span>
-          </p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px", color: C.fg, fontFamily: "Georgia, serif" }}>Dashboard</h1>
+          <p style={{ fontSize: 13, color: C.fgMuted, margin: 0, textTransform: "capitalize" }}>{fmtFull(TODAY_DS)}</p>
         </div>
-      </div>
-
-      {/* HERO: Faturamento grande + 3 KPIs auxiliares */}
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 1.4fr) minmax(220px, 1fr)", gap: 14, marginBottom: 14 }} className="grid-responsive">
-        {/* Hero card */}
-        <div style={{
-          background: "linear-gradient(135deg, " + C.card + " 0%, " + C.card2 + " 100%)",
-          border: "1px solid " + C.borderHi, borderRadius: 16,
-          padding: "24px 26px", position: "relative", overflow: "hidden",
-          boxShadow: "0 1px 0 " + C.borderHi + " inset, 0 8px 24px rgba(0,0,0,0.18)",
-        }}>
-          {/* glow circular ouro no canto */}
+        {nextAppt && (
           <div style={{
-            position: "absolute", top: -40, right: -40, width: 180, height: 180,
-            borderRadius: "50%",
-            background: "radial-gradient(circle, " + C.goldBright + "18 0%, transparent 70%)",
-            pointerEvents: "none",
-          }} />
-          {/* decorative bars (identidade Fadein) */}
-          <svg width="80" height="60" viewBox="0 0 80 60" style={{ position: "absolute", top: 18, right: 22, opacity: 0.16 }}>
-            {[
-              { x: 0,  h: 18 }, { x: 14, h: 28 }, { x: 28, h: 38 },
-              { x: 42, h: 50 }, { x: 56, h: 60 },
-            ].map((b, i) => (
-              <rect key={i} x={b.x} y={60 - b.h} width="10" height={b.h} rx="2" fill={C.goldBright} />
-            ))}
-          </svg>
-
-          <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 8 }}>
-            Faturamento · últimos 30 dias
-          </div>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-            <span style={{ fontSize: 38, fontWeight: 700, color: C.goldBright, letterSpacing: -1, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-              {fmtMoney(revenue)}
-            </span>
-            <span style={{
-              fontSize: 12, fontWeight: 700,
-              padding: "3px 9px", borderRadius: 14,
-              background: trendPct >= 0 ? C.greenDim : C.redDim,
-              color: trendPct >= 0 ? C.green : C.red,
-              display: "inline-flex", alignItems: "center", gap: 3,
-            }}>
-              {trendPct >= 0 ? "↑" : "↓"} {Math.abs(trendPct)}%
-            </span>
-          </div>
-
-          {/* sparkline 30d embutido */}
-          <svg width="100%" height="48" viewBox={"0 0 200 48"} preserveAspectRatio="none" style={{ display: "block" }}>
-            <defs>
-              <linearGradient id="sparkArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"  stopColor={C.goldBright} stopOpacity="0.35" />
-                <stop offset="100%" stopColor={C.goldBright} stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            {(() => {
-              const w = 200, h = 48;
-              const pts = sparkPts.map((v, i) => {
-                const x = (i / Math.max(sparkPts.length - 1, 1)) * w;
-                const y = h - (v / sparkMax) * (h - 4) - 2;
-                return [x, y];
-              });
-              const lp = pts.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
-              const ap = lp + " L" + w + " " + h + " L0 " + h + " Z";
-              return (
-                <>
-                  <path d={ap} fill="url(#sparkArea)" />
-                  <path d={lp} fill="none" stroke={C.goldBright} strokeWidth="1.6" strokeLinejoin="round" />
-                </>
-              );
-            })()}
-          </svg>
-
-          <div style={{ fontSize: 11, color: C.fgMuted, marginTop: 4, fontStyle: "italic" }}>
-            vs {fmtMoney(revPrev)} no período anterior
-          </div>
-        </div>
-
-        {/* 3 mini-KPIs empilhados */}
-        <div style={{ display: "grid", gridTemplateRows: "1fr 1fr 1fr", gap: 8 }}>
-          {[
-            { label: "Hoje",          value: todayAppts.length, sub: "agendamentos", color: C.goldBright, icon: Ic.calendar },
-            { label: "Lucro 30d",     value: fmtMoney(revenue - expenses), sub: "receita − despesas", color: revenue > expenses ? C.green : C.red, icon: Ic.trendUp },
-            { label: "Ticket médio",  value: fmtMoney(avgTicket), sub: "por atendimento", color: C.fg, icon: Ic.money },
-          ].map((k, i) => (
-            <div key={i} style={{
-              background: C.card, border: "1px solid " + C.border, borderRadius: 12,
-              padding: "12px 16px", display: "flex", alignItems: "center", gap: 12,
-            }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: 9,
-                background: k.color === C.fg ? C.bgSunken : k.color + "15",
-                color: k.color, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-              }}>{k.icon}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 10, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>{k.label}</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: k.color, lineHeight: 1.1, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{k.value}</div>
-                <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{k.sub}</div>
+            display: "flex", alignItems: "center", gap: 12,
+            background: C.goldDim, border: "1px solid " + C.goldBright + "40",
+            borderRadius: 12, padding: "10px 16px",
+          }}>
+            <div style={{ color: C.goldBright }}>{Ic.clock}</div>
+            <div>
+              <div style={{ fontSize: 10, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Próximo cliente</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.goldBright }}>
+                {nextAppt.time} · {nextAppt.client}
               </div>
             </div>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Próximo cliente — quando existe, vira faixa de destaque */}
-      {nextAppt && (
-        <div onClick={() => navigate("agenda")} style={{
-          display: "flex", alignItems: "center", gap: 14,
-          background: "linear-gradient(90deg, " + C.goldDim + " 0%, transparent 100%)",
-          border: "1px solid " + C.goldBright + "30",
-          borderRadius: 12, padding: "12px 18px", marginBottom: 18, cursor: "pointer",
-        }}>
-          <div style={{
-            width: 42, height: 42, borderRadius: "50%",
-            background: nextAppt.barber.color + "30", color: nextAppt.barber.color,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 16, fontWeight: 700, flexShrink: 0,
-          }}>{nextAppt.barber.avatar}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 10, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>Próximo atendimento</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: C.fg, marginTop: 2 }}>
-              {nextAppt.client} <span style={{ color: C.fgMuted, fontWeight: 400 }}>· {nextAppt.service.name}</span>
-            </div>
-          </div>
-          <div style={{ textAlign: "right", flexShrink: 0 }}>
-            <div style={{ fontSize: 22, fontWeight: 700, color: C.goldBright, fontVariantNumeric: "tabular-nums", lineHeight: 1 }}>{nextAppt.time}</div>
-            <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>{nextAppt.barber.name}</div>
-          </div>
-          <div style={{ color: C.goldBright }}>{Ic.chevR}</div>
-        </div>
-      )}
+      {/* KPIs */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 24 }}>
+        <KPI label="Faturamento 30d" value={fmtMoney(revenue)} note="↑ 12% vs anterior" up={true} accent />
+        <KPI label="Hoje" value={String(todayAppts.length) + " agendamentos"} note={todayAppts.filter(a => a.status === "done").length + " finalizados"} />
+        <KPI label="Lucro estimado" value={fmtMoney(revenue - expenses)} note="receita − despesas" up={revenue > expenses} />
+        <KPI label="Ticket médio" value={fmtMoney(avgTicket)} note="por atendimento" />
+      </div>
 
-      {/* Main chart - área com gradient (substitui barras) */}
+      {/* Main chart */}
       <div style={{
         background: C.card, border: "1px solid " + C.border, borderRadius: 14,
         padding: "20px 24px", marginBottom: 16,
-        boxShadow: "0 1px 0 " + C.borderHi + " inset",
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
           <div>
-            <div style={{ fontSize: 11, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>Receita no período</div>
-            <div style={{ fontSize: 26, fontWeight: 700, color: C.goldBright, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+            <div style={{ fontSize: 11, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.6 }}>Receita no período</div>
+            <div style={{ fontSize: 28, fontWeight: 700, color: C.goldBright, marginTop: 4, fontFamily: "Georgia, serif" }}>
               {fmtMoney(totalPeriod)}
             </div>
           </div>
@@ -1176,57 +996,41 @@ function Dashboard({ appts, txns, services, navigate }) {
           </div>
         </div>
 
-        <div className="dashboard-chart-wrap" style={{ position: "relative" }}>
+        <div style={{ position: "relative" }}>
           <svg width="100%" viewBox={"0 0 " + SVG_W + " " + SVG_H} style={{ display: "block", overflow: "visible" }}>
-            <defs>
-              <linearGradient id="dashArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"  stopColor={C.goldBright} stopOpacity="0.4" />
-                <stop offset="100%" stopColor={C.goldBright} stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            {/* grid lines */}
-            {[0, 0.25, 0.5, 0.75, 1].map(f => (
-              <line key={f} x1={PAD} y1={PAD + (SVG_H - PAD * 2) * f} x2={SVG_W - PAD} y2={PAD + (SVG_H - PAD * 2) * f}
-                stroke={C.border} strokeWidth="1" strokeDasharray="3 3" opacity={f === 1 ? 0.8 : 0.4} />
+            {[0.25, 0.5, 0.75, 1].map(f => (
+              <line key={f} x1="0" y1={BAR_H * (1 - f)} x2={SVG_W} y2={BAR_H * (1 - f)}
+                stroke={C.border} strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
             ))}
-            {/* area + line */}
-            {linePts.length > 1 && (
-              <>
-                <path d={areaPath} fill="url(#dashArea)" />
-                <path d={linePath} fill="none" stroke={C.goldBright} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
-              </>
-            )}
-            {/* dots + hover */}
-            {linePts.map((p, i) => {
+            {pts.map((p, i) => {
+              const slotW = SVG_W / pts.length;
+              const bw    = Math.max(slotW * 0.6, 4);
+              const bx    = i * slotW + (slotW - bw) / 2;
+              const bh    = Math.max((p.val / maxVal) * (BAR_H - 6), 3);
+              const by    = BAR_H - bh;
               const isToday = p.ds === TODAY_DS;
               const isHov   = hovBar === i;
               return (
                 <g key={p.ds} style={{ cursor: "pointer" }}
                    onMouseEnter={() => setHovBar(i)} onMouseLeave={() => setHovBar(null)}>
-                  <rect x={p.x - 14} y={0} width={28} height={SVG_H} fill="transparent" />
-                  <circle cx={p.x} cy={p.y}
-                    r={isHov || isToday ? 5 : 3.5}
-                    fill={isToday ? C.goldBright : C.card}
-                    stroke={C.goldBright} strokeWidth={isToday ? 0 : 2}
-                  />
+                  <rect x={i * slotW} y={0} width={slotW} height={BAR_H} fill="transparent" />
+                  <rect x={bx} y={by} width={bw} height={bh} rx="3"
+                    fill={isToday ? C.goldBright : isHov ? C.goldBright + "C0" : C.goldBright + "40"}
+                    style={{ transition: "fill 0.12s" }} />
                   {isHov && p.val > 0 && (
                     <g>
-                      <rect x={p.x - 50} y={p.y - 44} width="100" height="34" rx="6" fill={C.card2} stroke={C.borderHi} />
-                      <text x={p.x} y={p.y - 28} textAnchor="middle" fontSize="9" fill={C.fgMuted}>{p.label}</text>
-                      <text x={p.x} y={p.y - 16} textAnchor="middle" fontSize="11" fill={C.goldBright} fontWeight="700">{fmtMoney(p.val)}</text>
+                      <rect x={bx + bw / 2 - 50} y={by - 38} width={100} height={30} rx="6"
+                        fill={C.card2} stroke={C.borderHi} />
+                      <text x={bx + bw / 2} y={by - 24} textAnchor="middle" fontSize="9" fill={C.fgMuted}>{p.label}</text>
+                      <text x={bx + bw / 2} y={by - 12} textAnchor="middle" fontSize="11" fill={C.fg} fontWeight="700">
+                        {fmtMoney(p.val)}
+                      </text>
                     </g>
                   )}
+                  <text x={bx + bw / 2} y={SVG_H - 4} textAnchor="middle" fontSize="9" fill={C.fgMuted}>
+                    {range === "7d" ? p.label : (i % Math.ceil(pts.length / 6) === 0 ? p.label : "")}
+                  </text>
                 </g>
-              );
-            })}
-            {/* x-axis labels */}
-            {linePts.map((p, i) => {
-              const show = range === "7d" ? true : (i % Math.ceil(linePts.length / 6) === 0 || i === linePts.length - 1);
-              if (!show) return null;
-              return (
-                <text key={p.ds + "-l"} x={p.x} y={SVG_H - 2} textAnchor="middle" fontSize="9" fill={C.fgMuted}>
-                  {p.label}
-                </text>
               );
             })}
           </svg>
@@ -1251,7 +1055,7 @@ function Dashboard({ appts, txns, services, navigate }) {
                 padding: "8px 0", borderBottom: "1px solid " + C.border,
               }}>
                 <div style={{ width: 4, height: 32, borderRadius: 2, background: a.barber.color }} />
-                <span style={{ fontSize: 13, fontWeight: 700, color: C.goldBright, width: 44, fontVariantNumeric: "tabular-nums" }}>{a.time}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.goldBright, width: 40 }}>{a.time}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, color: C.fg, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.client}</div>
                   <div style={{ fontSize: 11, color: C.fgMuted }}>{a.service.name} · {a.barber.name}</div>
@@ -1264,26 +1068,16 @@ function Dashboard({ appts, txns, services, navigate }) {
 
         <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
           <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 14 }}>
-            Top serviços · 30d
+            Receita por serviço · 30d
           </div>
-          {svcRev.length === 0 && (
-            <p style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: 20 }}>Sem dados ainda</p>
-          )}
-          {svcRev.map(([name, val], i) => (
-            <div key={name} style={{ marginBottom: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 }}>
-                <span style={{ fontSize: 12, color: C.fg, display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 10, color: C.muted, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>#{i + 1}</span>
-                  {name}
-                </span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: C.goldBright, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(val)}</span>
+          {svcRev.map(([name, val]) => (
+            <div key={name} style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ fontSize: 12, color: C.fg }}>{name}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: C.goldBright }}>{fmtMoney(val)}</span>
               </div>
-              <div style={{ height: 6, borderRadius: 3, background: C.bgSunken, overflow: "hidden" }}>
-                <div style={{
-                  height: "100%", width: (val / svcMax * 100) + "%",
-                  background: "linear-gradient(90deg, " + C.gold + " 0%, " + C.goldBright + " 100%)",
-                  borderRadius: 3, transition: "width 0.6s",
-                }} />
+              <div style={{ height: 5, borderRadius: 3, background: C.bgSunken, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: (val / svcMax * 100) + "%", background: C.goldBright, borderRadius: 3, transition: "width 0.6s" }} />
               </div>
             </div>
           ))}
@@ -1293,6 +1087,7 @@ function Dashboard({ appts, txns, services, navigate }) {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <Btn icon={Ic.plus} onClick={() => navigate("agenda")}>Novo agendamento</Btn>
         <Btn v="ghost" icon={Ic.money} onClick={() => navigate("financeiro")}>Lançar entrada</Btn>
+        <Btn v="ghost" icon={Ic.box} onClick={() => navigate("estoque")}>Ver estoque</Btn>
         <Btn v="ghost" icon={Ic.link} onClick={() => navigate("link")}>Link de agendamento</Btn>
       </div>
     </div>
@@ -1518,7 +1313,7 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 16 }}>
         <div style={{ flex: 1, minWidth: 260 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 700, margin: "0 0 4px", color: C.fg, letterSpacing: -0.5 }}>Agenda</h1>
+          <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px", color: C.fg, fontFamily: "Georgia, serif" }}>Agenda</h1>
           <p style={{ fontSize: 13, color: C.fgMuted, margin: 0, textTransform: "capitalize" }}>
             {selDate === TODAY_DS && <span style={{ color: C.goldBright, fontWeight: 600 }}>Hoje · </span>}
             {fmtFull(selDate)}
@@ -1669,119 +1464,50 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
       </div>
 
       {/* Appointment list */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, overflow: "hidden" }}>
         {shown.length === 0 ? (
-          <div style={{ background: C.card, border: "1px dashed " + C.border, borderRadius: 14, padding: 56, textAlign: "center" }}>
-            <div style={{ color: C.faded, marginBottom: 12, fontSize: 38 }}>🗓</div>
+          <div style={{ padding: 56, textAlign: "center" }}>
+            <div style={{ color: C.faded, marginBottom: 12, fontSize: 32 }}>🗓</div>
             <p style={{ color: C.fgMuted, fontSize: 14, margin: "0 0 16px" }}>Nenhum agendamento neste dia</p>
             {!dateIsPast && <Btn sm onClick={openNew} icon={Ic.plus}>Criar primeiro</Btn>}
           </div>
-        ) : shown.map(a => {
-          const isDone   = a.status === "done";
-          const isPaid   = a.paid;
-          const statusBg = a.status === "pending"   ? C.amberDim
-                         : a.status === "confirmed" ? C.goldDim
-                         : a.status === "done"      ? C.greenDim
-                         : C.bgSunken;
-          const statusFg = a.status === "pending"   ? C.amber
-                         : a.status === "confirmed" ? C.goldBright
-                         : a.status === "done"      ? C.green
-                         : C.fgMuted;
-          return (
-            <div key={a.id} style={{
-              display: "flex", alignItems: "stretch", gap: 0,
-              background: C.card, border: "1px solid " + C.border, borderRadius: 12,
-              overflow: "hidden", transition: "border-color 0.15s, transform 0.15s",
-              opacity: isDone ? 0.78 : 1,
-            }}>
-              {/* Faixa do barbeiro (esquerda) */}
-              <div style={{ width: 5, background: a.barber.color, flexShrink: 0 }} />
-
-              {/* Bloco da HORA (destaque) */}
-              <div style={{
-                width: 78, flexShrink: 0,
-                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                background: C.bgSunken,
-                padding: "14px 8px",
-              }}>
-                <div style={{
-                  fontSize: 22, fontWeight: 700, color: C.goldBright,
-                  fontVariantNumeric: "tabular-nums", lineHeight: 1, letterSpacing: -0.5,
-                }}>
-                  {a.time}
-                </div>
-                <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 4, fontWeight: 500 }}>
-                  {a.service.duration}min
-                </div>
+        ) : shown.map(a => (
+          <div key={a.id} style={{
+            display: "flex", alignItems: "center", gap: 12,
+            padding: "14px 18px", borderBottom: "1px solid " + C.border,
+          }}>
+            <div style={{ width: 4, alignSelf: "stretch", borderRadius: 2, background: a.barber.color, flexShrink: 0 }} />
+            <span style={{ fontWeight: 700, fontSize: 15, color: C.goldBright, width: 50, flexShrink: 0, fontFamily: "Georgia, serif" }}>
+              {a.time}
+            </span>
+            <div style={{
+              width: 32, height: 32, borderRadius: "50%",
+              background: a.barber.color + "25", color: a.barber.color,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 12, fontWeight: 700, flexShrink: 0,
+            }}>{a.barber.avatar}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: C.fg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {a.client}
               </div>
-
-              {/* Conteúdo principal */}
-              <div style={{ flex: 1, minWidth: 0, padding: "14px 16px", display: "flex", flexDirection: "column", justifyContent: "center" }}>
-                {/* Cliente em destaque */}
-                <div style={{
-                  fontSize: 15, fontWeight: 700, color: C.fg,
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  marginBottom: 4,
-                }}>
-                  {a.client}
-                </div>
-                {/* Linha secundária: serviço + barbeiro + preço */}
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
-                  <span style={{
-                    background: a.barber.color + "18", color: a.barber.color,
-                    padding: "2px 8px", borderRadius: 6, fontWeight: 600,
-                    display: "inline-flex", alignItems: "center", gap: 5,
-                  }}>
-                    <span style={{
-                      width: 16, height: 16, borderRadius: "50%",
-                      background: a.barber.color + "30", color: a.barber.color,
-                      display: "inline-flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 9, fontWeight: 700,
-                    }}>{a.barber.avatar}</span>
-                    {a.barber.name}
-                  </span>
-                  <span style={{ color: C.fgMuted }}>·</span>
-                  <span style={{ color: C.fg, fontWeight: 500 }}>{a.service.name}</span>
-                  <span style={{ color: C.fgMuted }}>·</span>
-                  <span style={{ color: C.goldBright, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                    {fmtMoney(a.service.price)}
-                  </span>
-                </div>
-              </div>
-
-              {/* Status + Ações (direita) */}
-              <div style={{
-                display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "flex-end",
-                gap: 8, padding: "12px 14px", flexShrink: 0,
-              }}>
-                {/* Status pill */}
-                <span style={{
-                  fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 12,
-                  background: statusBg, color: statusFg, textTransform: "uppercase", letterSpacing: 0.5,
-                  display: "inline-flex", alignItems: "center", gap: 4,
-                }}>
-                  {a.status === "done" ? "✓ Feito"
-                    : a.status === "confirmed" ? "● Confirmado"
-                    : a.status === "pending" ? "○ Pendente"
-                    : a.status}
-                </span>
-                {/* Ações */}
-                {isDone && a.paidAmount ? (
-                  <span style={{ fontSize: 12, color: C.green, fontWeight: 700, fontVariantNumeric: "tabular-nums" }} title={"Pago via " + a.paidMethod}>
-                    +{fmtMoney(a.paidAmount)}
-                  </span>
-                ) : !dateIsPast && (
-                  <div style={{ display: "flex", gap: 4 }}>
-                    {a.status === "pending" && <Btn sm v="success" onClick={() => confirmIt(a.id)} title="Confirmar">{Ic.check}</Btn>}
-                    {!isDone && <Btn sm v="primary" onClick={() => markDone(a.id)} title="Concluir e receber">💰</Btn>}
-                    {!isDone && <Btn sm v="ghost" onClick={() => openEdit(a)} title="Editar">{Ic.edit}</Btn>}
-                    {!isDone && <Btn sm v="danger" onClick={() => setConfirming(a)} title="Cancelar">{Ic.trash}</Btn>}
-                  </div>
-                )}
+              <div style={{ fontSize: 11, color: C.fgMuted }}>
+                {a.service.name} · {a.service.duration}min · {fmtMoney(a.service.price)} · {a.barber.name}
               </div>
             </div>
-          );
-        })}
+            <StatusPill status={a.status} />
+            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+              {a.status === "pending" && !dateIsPast  && <Btn sm v="success" onClick={() => confirmIt(a.id)} title="Confirmar">{Ic.check}</Btn>}
+              {a.status !== "done"    && !dateIsPast  && <Btn sm v="primary" onClick={() => markDone(a.id)} title="Concluir e receber">💰 Receber</Btn>}
+              {a.status !== "done"    && !dateIsPast  && <Btn sm v="ghost" onClick={() => openEdit(a)} title="Editar">{Ic.edit}</Btn>}
+              {a.status !== "done"    && !dateIsPast  && <Btn sm v="danger" onClick={() => setConfirming(a)} title="Cancelar">{Ic.trash}</Btn>}
+              {a.status === "done"    && a.paidAmount && (
+                <span style={{ fontSize: 11, color: C.green, fontWeight: 700 }} title={"Pago via " + a.paidMethod}>
+                  {fmtMoney(a.paidAmount)}
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
 
       <div style={{ fontSize: 12, color: C.fgMuted, marginTop: 14, display: "flex", gap: 16, justifyContent: "space-between", flexWrap: "wrap" }}>
@@ -2082,8 +1808,9 @@ function Financeiro({ txns, setTxns, navigate, createTxn, deleteTxn }) {
   return (
     <div className="fade-in">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-        <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0, color: C.fg, letterSpacing: -0.5 }}>Financeiro</h1>
+        <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: C.fg, fontFamily: "Georgia, serif" }}>Financeiro</h1>
         <div style={{ display: "flex", gap: 8 }}>
+          <Btn sm v="ghost" icon={Ic.box} onClick={() => navigate("estoque")}>Estoque</Btn>
           <Btn sm icon={Ic.plus} onClick={() => setModal(true)}>Lançar</Btn>
         </div>
       </div>
@@ -2164,29 +1891,14 @@ function Financeiro({ txns, setTxns, navigate, createTxn, deleteTxn }) {
           })}
         </svg>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginTop: 16, paddingTop: 16, borderTop: "1px solid " + C.border }}>
-          {(() => {
-            const total = Object.values(byMethod).reduce((s, v) => s + v, 0);
-            return Object.entries(byMethod).map(([m, v]) => {
-              const pct = total > 0 ? (v / total) * 100 : 0;
-              const col = m === "Pix" ? C.green : m === "Cartão" ? C.blue : C.amber;
-              return (
-                <div key={m} style={{
-                  background: C.bgSunken, borderRadius: 10, padding: "14px 16px",
-                  border: "1px solid " + C.border,
-                }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <span style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>{m}</span>
-                    <span style={{ fontSize: 10, color: col, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{pct.toFixed(0)}%</span>
-                  </div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: C.fg, marginBottom: 8, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(v)}</div>
-                  <div style={{ height: 4, borderRadius: 2, background: C.bg, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: pct + "%", background: col, borderRadius: 2, transition: "width 0.6s" }} />
-                  </div>
-                </div>
-              );
-            });
-          })()}
+        <div style={{ display: "flex", gap: 16, marginTop: 14, paddingTop: 14, borderTop: "1px solid " + C.border }}>
+          {Object.entries(byMethod).map(([m, v]) => (
+            <div key={m} style={{ flex: 1, textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: C.fgMuted, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{m}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: C.fg, marginBottom: 6 }}>{fmtMoney(v)}</div>
+              <div style={{ height: 3, borderRadius: 2, background: m === "Pix" ? C.green : m === "Cartão" ? C.blue : C.amber }} />
+            </div>
+          ))}
         </div>
       </div>
 
@@ -2258,9 +1970,8 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients,
   const [confirmed, setConfirmed]     = useState(null);
   const [copied, setCopied]           = useState(false);
 
-  const slug = slugify(shop.name);
-  const origin = (typeof window !== "undefined" && window.location.origin) ? window.location.origin : "https://fadein.app";
-  const link = origin + "/agendar/" + slug;
+  const slug = shop.name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+  const link = "fadein.app/agendar/" + slug;
 
   const bookDates = useMemo(() => {
     const arr = [];
@@ -2319,30 +2030,16 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients,
   return (
     <div className="fade-in">
       <h1 style={{ fontSize: 24, fontWeight: 700, margin: "0 0 4px", color: C.fg, fontFamily: "Georgia, serif" }}>Link de Agendamento</h1>
-      <p style={{ fontSize: 13, color: C.fgMuted, margin: "0 0 24px" }}>
-        Compartilhe esse link no WhatsApp, Instagram ou bio. Os clientes agendam direto e cai na sua agenda automaticamente — 24h, sem você responder.
-      </p>
+      <p style={{ fontSize: 13, color: C.fgMuted, margin: "0 0 24px" }}>Página funcional — clientes podem agendar online 24h</p>
 
-      <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 16, display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
-        <code style={{ flex: 1, minWidth: 200, background: C.bgSunken, padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, color: C.goldBright, border: "1px solid " + C.border, fontFamily: "ui-monospace, monospace", overflow: "hidden", textOverflow: "ellipsis" }}>{link}</code>
-        <Btn sm onClick={() => {
-          if (navigator.clipboard) navigator.clipboard.writeText(link);
-          setCopied(true); setTimeout(() => setCopied(false), 2000);
-        }}>{copied ? "✓ Copiado" : "Copiar link"}</Btn>
-        <Btn sm v="ghost" icon={Ic.whatsapp} onClick={() => {
-          const msg = encodeURIComponent("Olá! Você pode agendar seu horário aqui: " + link);
-          window.open("https://wa.me/?text=" + msg, "_blank");
-        }}>Enviar</Btn>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
-        <Btn sm v="soft" onClick={() => window.open(link, "_blank")}>
-          🔗 Abrir página real em nova aba
-        </Btn>
+      <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 16, display: "flex", alignItems: "center", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
+        <code style={{ flex: 1, minWidth: 200, background: C.bgSunken, padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, color: C.goldBright, border: "1px solid " + C.border, fontFamily: "ui-monospace, monospace" }}>{link}</code>
+        <Btn sm onClick={() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }}>{copied ? "✓ Copiado" : "Copiar link"}</Btn>
+        <Btn sm v="ghost" icon={Ic.whatsapp}>Enviar</Btn>
       </div>
 
       <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 14 }}>
-        ▼ Pré-visualização (agendamentos feitos aqui caem na agenda real)
+        ▼ Teste como seu cliente (agendamentos vão pra agenda real)
       </div>
 
       <div style={{
@@ -2538,545 +2235,107 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PUBLIC BOOKING — página pública (sem auth) acessada via /agendar/{slug}
-// • Carrega shop + serviços + barbeiros do Supabase a partir do slug
-// • Salva nome+telefone do cliente em localStorage (não pede de novo)
+// ESTOQUE
 // ═══════════════════════════════════════════════════════════════════════════
-function slugify(s) {
-  return (s || "").toString().toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-}
+function Estoque({ products, setProducts }) {
+  const [modal, setModal]     = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [confirming, setConfirming] = useState(null);
+  const [form, setForm] = useState({ name: "", qty: "10", min: "3", cost: "", price: "", cat: "Pomada" });
 
-function PublicBooking({ slug }) {
-  const [loading, setLoading]   = useState(true);
-  const [shop, setShop]         = useState(null);
-  const [services, setServices] = useState([]);
-  const [barbers, setBarbers]   = useState([]);
-  const [appts, setAppts]       = useState([]);
-  const [errMsg, setErrMsg]     = useState("");
+  const low = products.filter(p => p.qty <= p.min);
 
-  const [step, setStep]         = useState("service");
-  const [selSvc, setSelSvc]     = useState(null);
-  const [selBarber, setSelBarber] = useState(null);
-  const [selDate, setSelDate]   = useState(TODAY_DS);
-  const [selTime, setSelTime]   = useState(null);
-  const [clientName, setClientName]   = useState("");
-  const [clientPhone, setClientPhone] = useState("");
-  const [confirmed, setConfirmed]     = useState(null);
-  const [submitting, setSubmitting]   = useState(false);
-
-  // Cliente recorrente: tenta recuperar dados salvos para este shop
-  useEffect(() => {
-    if (!slug) return;
-    try {
-      const raw = localStorage.getItem("fadein:client:" + slug);
-      if (raw) {
-        const saved = JSON.parse(raw);
-        if (saved.name)  setClientName(saved.name);
-        if (saved.phone) setClientPhone(saved.phone);
-      }
-    } catch (e) { /* ignora */ }
-  }, [slug]);
-
-  // Carrega shop por slug
-  useEffect(() => {
-    if (!slug) return;
-    let cancelled = false;
-    (async () => {
-      setLoading(true); setErrMsg("");
-      try {
-        const BARBER_PALETTE = ["#E0B445", "#5A9BE2", "#5BAF6F", "#E27E5A", "#9B6FD4", "#D45A8A"];
-
-        // 1) Busca shop por slug (ou por nome convertido em slug — fallback)
-        let shopData = null;
-        const { data: byCol } = await supabase.from("shops").select("*").eq("slug", slug).maybeSingle();
-        if (byCol) shopData = byCol;
-        if (!shopData) {
-          // Fallback: lista shops e compara slugify(name)
-          const { data: all } = await supabase.from("shops").select("*").limit(500);
-          shopData = (all || []).find(s => slugify(s.name) === slug) || null;
-        }
-        if (cancelled) return;
-        if (!shopData) { setErrMsg("Página de agendamento não encontrada."); setLoading(false); return; }
-
-        setShop({ id: shopData.id, name: shopData.name, address: shopData.address || "" });
-
-        // 2) Carrega serviços ativos
-        const { data: svcs } = await supabase.from("services")
-          .select("*").eq("shop_id", shopData.id).eq("active", true).order("name");
-        const mappedSvcs = (svcs || []).map(r => ({
-          id: r.id, name: r.name,
-          price: parseFloat(r.price) || 0,
-          duration: parseInt(r.duration) || 30,
-        }));
-
-        // 3) Carrega barbeiros ativos
-        const { data: brbs } = await supabase.from("barbers")
-          .select("*").eq("shop_id", shopData.id).eq("active", true).order("created_at");
-        const mappedBrbs = (brbs || []).map((b, i) => ({
-          ...b,
-          avatar: (b.name || "?").charAt(0).toUpperCase(),
-          color: BARBER_PALETTE[i % BARBER_PALETTE.length],
-        }));
-
-        // 4) Carrega agendamentos próximos para calcular slots ocupados
-        const today = new Date();
-        const from = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
-        const to   = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 31).toISOString();
-        const { data: apts } = await supabase.from("appointments")
-          .select("*").eq("shop_id", shopData.id).gte("date", from).lte("date", to);
-        const mappedApts = (apts || []).map(r => {
-          const dt = new Date(r.date);
-          let svc = null;
-          try { svc = r.service_data ? (typeof r.service_data === "string" ? JSON.parse(r.service_data) : r.service_data) : null; }
-          catch (e) { svc = null; }
-          if (!svc) svc = { id: 0, name: r.service || "Serviço", price: parseFloat(r.price) || 0, duration: 30 };
-          return {
-            id: r.id,
-            date: dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate()),
-            time: r.time || (pad(dt.getHours()) + ":" + pad(dt.getMinutes())),
-            service: svc,
-            barber: { id: r.barber_id },
-            status: r.status || "pending",
-          };
-        });
-
-        if (cancelled) return;
-        setServices(mappedSvcs);
-        setBarbers(mappedBrbs);
-        setAppts(mappedApts);
-        setLoading(false);
-      } catch (e) {
-        if (!cancelled) { setErrMsg("Não foi possível carregar a página. Tente novamente em instantes."); setLoading(false); }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [slug]);
-
-  const bookDates = useMemo(() => {
-    const arr = [];
-    for (let i = 0; i <= 30; i++) {
-      const ds = toDS(addDays(BASE_DATE, i));
-      if (parseDS(ds).getDay() !== 0) arr.push(ds);
-    }
-    return arr;
-  }, []);
-
-  const allSlotsInfo = useMemo(() => {
-    if (!selBarber || !selSvc) return [];
-    const busy = appts
-      .filter(a => a.date === selDate && a.barber.id === selBarber.id && a.status !== "cancelled")
-      .map(a => {
-        const [h, m] = a.time.split(":").map(Number);
-        const s = h * 60 + m;
-        return { s, e: s + (a.service?.duration || 30) };
-      });
-    return HOURS.map(slot => {
-      const [h, m] = slot.split(":").map(Number);
-      const s = h * 60 + m, e = s + selSvc.duration;
-      return { time: slot, available: !busy.some(b => s < b.e && e > b.s) };
-    });
-  }, [selDate, selBarber, selSvc, appts]);
-
-  function reset() {
-    setStep("service"); setSelSvc(null); setSelBarber(null);
-    setSelTime(null); setConfirmed(null);
-    // mantém nome/telefone — cliente recorrente
+  function openNew()   { setEditing(null); setForm({ name: "", qty: "10", min: "3", cost: "", price: "", cat: "Pomada" }); setModal(true); }
+  function openEdit(p) { setEditing(p.id); setForm({ name: p.name, qty: String(p.qty), min: String(p.min), cost: String(p.cost), price: String(p.price), cat: p.cat }); setModal(true); }
+  function save() {
+    if (!form.name.trim()) return;
+    const d = { name: form.name, qty: parseInt(form.qty) || 0, min: parseInt(form.min) || 0, cost: parseFloat(form.cost) || 0, price: parseFloat(form.price) || 0, cat: form.cat };
+    if (editing) setProducts(p => p.map(x => x.id === editing ? { ...x, ...d } : x));
+    else         setProducts(p => [...p, { id: Date.now(), ...d }]);
+    setModal(false); setEditing(null);
   }
 
-  async function confirm() {
-    if (!clientName.trim() || submitting) return;
-    setSubmitting(true);
-    try {
-      const [Y, M, D] = selDate.split("-").map(Number);
-      const [hh, mm]  = selTime.split(":").map(Number);
-      const dt = new Date(Y, (M || 1) - 1, D || 1, hh || 0, mm || 0);
-      const row = {
-        shop_id:      shop.id,
-        barber_id:    selBarber.id,
-        client_name:  clientName.trim(),
-        client_phone: clientPhone.trim() || null,
-        service:      selSvc.name,
-        service_data: selSvc,
-        price:        selSvc.price,
-        status:       "pending",
-        date:         dt.toISOString(),
-        time:         selTime,
-        paid:         false,
-        notes:        "Veio pelo link de agendamento",
-      };
-      const { data: created, error } = await supabase.from("appointments").insert(row).select().maybeSingle();
-      if (error) throw error;
-
-      // Upsert cliente: incrementa visits ou cria
-      try {
-        const { data: existing } = await supabase.from("clients")
-          .select("*").eq("shop_id", shop.id).eq("phone", clientPhone.trim() || "").maybeSingle();
-        if (existing) {
-          await supabase.from("clients").update({
-            name: clientName.trim(),
-            last_visit: selDate,
-            visits: (existing.visits || 0) + 1,
-            fav_barber: selBarber.id,
-          }).eq("id", existing.id);
-        } else {
-          await supabase.from("clients").insert({
-            shop_id: shop.id,
-            name: clientName.trim(),
-            phone: clientPhone.trim() || "",
-            last_visit: selDate,
-            visits: 1,
-            fav_barber: selBarber.id,
-            notes: "Veio pelo link de agendamento",
-          });
-        }
-      } catch (e) { /* não bloqueia o agendamento */ }
-
-      // Salva pra próxima vez (não vai pedir os dados de novo)
-      try {
-        localStorage.setItem("fadein:client:" + slug, JSON.stringify({
-          name: clientName.trim(),
-          phone: clientPhone.trim(),
-          lastBooking: selDate,
-        }));
-      } catch (e) { /* ignora quota */ }
-
-      setConfirmed({
-        date: selDate, time: selTime,
-        client: clientName.trim(),
-        service: selSvc, barber: selBarber,
-      });
-      setStep("done");
-    } catch (e) {
-      alert("Não foi possível confirmar o agendamento. Tente novamente.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  if (loading) return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ textAlign: "center" }}>
-        <Logo scale={1.2} />
-        <p style={{ color: C.fgMuted, fontSize: 13, marginTop: 20 }} className="pulse">Carregando agendamento…</p>
-      </div>
-    </div>
-  );
-
-  if (errMsg) return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ textAlign: "center", maxWidth: 360 }}>
-        <Logo scale={1.1} />
-        <p style={{ color: C.red, fontSize: 14, marginTop: 24, fontWeight: 600 }}>{errMsg}</p>
-        <p style={{ color: C.fgMuted, fontSize: 12, marginTop: 8 }}>Verifique se o link está correto.</p>
-      </div>
-    </div>
-  );
-
-  const STEPS = ["service","barber","time","confirm"];
-  const isReturning = !!clientName && step === "confirm";
-
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, padding: "20px 16px 40px", color: C.fg, fontFamily: "system-ui, -apple-system, sans-serif" }}>
-      <div style={{ maxWidth: 440, margin: "0 auto" }}>
-        {/* Header */}
-        <div style={{ textAlign: "center", marginBottom: 22 }}>
-          <Logo scale={1.05} />
-        </div>
-
-        <div style={{ background: C.bgSunken, border: "1px solid " + C.border, borderRadius: 18, overflow: "hidden", boxShadow: "0 8px 28px rgba(0,0,0,0.35)" }}>
-          {/* Shop header */}
-          <div style={{ padding: "18px 20px", background: "linear-gradient(135deg, " + C.card + " 0%, " + C.card2 + " 100%)", borderBottom: "1px solid " + C.border }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: C.fg, fontFamily: "Georgia, serif" }}>{shop.name}</div>
-            {shop.address && <div style={{ fontSize: 12, color: C.fgMuted, marginTop: 4 }}>{shop.address}</div>}
-          </div>
-
-          <div style={{ padding: 20 }}>
-            {/* Stepper */}
-            {step !== "done" && (
-              <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 22 }}>
-                {STEPS.map((s, i) => {
-                  const labels = ["Serviço","Barbeiro","Horário","Confirmar"];
-                  const curIdx = STEPS.indexOf(step);
-                  const done   = curIdx > i;
-                  const active = curIdx === i;
-                  return (
-                    <div key={s} style={{ display: "flex", alignItems: "center", gap: 4, flex: 1 }}>
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, flex: 1 }}>
-                        <div style={{
-                          width: 24, height: 24, borderRadius: "50%",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 11, fontWeight: 700,
-                          background: active ? C.goldBright : done ? C.goldDim : C.bgSunken,
-                          color: active ? "#1A1A1A" : done ? C.goldBright : C.muted,
-                          border: "1px solid " + (active ? C.goldBright : done ? C.goldBright + "40" : C.border),
-                        }}>{done ? "✓" : i + 1}</div>
-                        <span style={{ fontSize: 9, color: active ? C.goldBright : C.fgMuted, fontWeight: 500 }}>{labels[i]}</span>
-                      </div>
-                      {i < STEPS.length - 1 && <div style={{ height: 1, width: 12, background: done ? C.goldBright + "40" : C.border, marginBottom: 14 }} />}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Mensagem de boas-vindas pra cliente recorrente */}
-            {clientName && step === "service" && (
-              <div style={{
-                background: C.goldDim, border: "1px solid " + C.goldBright + "30",
-                borderRadius: 10, padding: "10px 14px", marginBottom: 14,
-                fontSize: 12, color: C.goldBright, lineHeight: 1.5,
-              }}>
-                Olá, <b>{clientName.split(" ")[0]}</b>! Bom te ver de novo.
-              </div>
-            )}
-
-            {step === "service" && (
-              <div>
-                <p style={{ fontSize: 13, color: C.fgMuted, margin: "0 0 12px" }}>Escolha o serviço:</p>
-                {services.length === 0 ? (
-                  <p style={{ fontSize: 13, color: C.muted, textAlign: "center", padding: 20 }}>Nenhum serviço cadastrado ainda.</p>
-                ) : services.map(s => (
-                  <button key={s.id} onClick={() => { setSelSvc(s); setStep("barber"); }}
-                    style={{
-                      width: "100%", display: "flex", alignItems: "center", gap: 12,
-                      padding: "13px 14px", background: C.card, border: "1px solid " + C.border,
-                      borderRadius: 10, marginBottom: 6, cursor: "pointer", color: C.fg, textAlign: "left",
-                    }}
-                  >
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>{s.name}</div>
-                      <div style={{ fontSize: 11, color: C.fgMuted }}>{s.duration} minutos</div>
-                    </div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: C.goldBright, fontFamily: "Georgia, serif" }}>{fmtMoney(s.price)}</div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {step === "barber" && (
-              <div>
-                <button onClick={() => setStep("service")} style={{ background: "none", border: "none", color: C.goldBright, cursor: "pointer", fontSize: 12, marginBottom: 14, padding: 0, display: "flex", alignItems: "center", gap: 4 }}>
-                  {Ic.chevL} Voltar
-                </button>
-                <p style={{ fontSize: 13, color: C.fgMuted, margin: "0 0 12px" }}>Escolha o barbeiro:</p>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 10 }}>
-                  {barbers.map(b => (
-                    <button key={b.id} onClick={() => { setSelBarber(b); setSelTime(null); setStep("time"); }}
-                      style={{
-                        padding: "14px 8px", background: C.card,
-                        border: "1px solid " + C.border, borderRadius: 10,
-                        cursor: "pointer", textAlign: "center",
-                      }}
-                    >
-                      <div style={{
-                        width: 40, height: 40, borderRadius: "50%",
-                        background: b.color + "30", color: b.color,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 16, fontWeight: 700, margin: "0 auto 8px",
-                      }}>{b.avatar}</div>
-                      <div style={{ fontSize: 13, color: C.fg, fontWeight: 600 }}>{b.name}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {step === "time" && (
-              <div>
-                <button onClick={() => setStep("barber")} style={{ background: "none", border: "none", color: C.goldBright, cursor: "pointer", fontSize: 12, marginBottom: 14, padding: 0, display: "flex", alignItems: "center", gap: 4 }}>
-                  {Ic.chevL} Voltar
-                </button>
-                <div style={{ display: "flex", gap: 4, overflowX: "auto", marginBottom: 14, paddingBottom: 4 }}>
-                  {bookDates.slice(0, 14).map(ds => (
-                    <button key={ds} onClick={() => { setSelDate(ds); setSelTime(null); }} style={{
-                      minWidth: 50, flexShrink: 0, padding: "8px 4px", borderRadius: 8,
-                      border: "1px solid " + (selDate === ds ? C.goldBright : C.border),
-                      background: selDate === ds ? C.goldDim : C.card,
-                      cursor: "pointer", textAlign: "center",
-                    }}>
-                      <div style={{ fontSize: 9, color: selDate === ds ? C.goldBright : C.fgMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>{fmtWeekday(ds)}</div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: selDate === ds ? C.goldBright : C.fg, marginTop: 2 }}>{parseDS(ds).getDate()}</div>
-                    </button>
-                  ))}
-                </div>
-                <p style={{ fontSize: 12, color: C.fgMuted, margin: "0 0 10px" }}>
-                  <b style={{ color: C.fg }}>{selBarber.name}</b> · {fmtShort(selDate)}
-                </p>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-                  {allSlotsInfo.map(({ time, available }) => (
-                    <button key={time} disabled={!available}
-                      onClick={() => { setSelTime(time); setStep("confirm"); }}
-                      style={{
-                        padding: "9px 4px", borderRadius: 8,
-                        border: "1px solid " + (available ? C.border : C.bgSunken),
-                        background: available ? C.card : C.bgSunken,
-                        color: available ? C.fg : C.faded,
-                        fontSize: 12, fontWeight: 500,
-                        cursor: available ? "pointer" : "not-allowed",
-                        textDecoration: !available ? "line-through" : "none",
-                      }}
-                    >{time}</button>
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: 14, marginTop: 12, fontSize: 10, color: C.fgMuted }}>
-                  <span>● Disponível</span>
-                  <span style={{ color: C.faded }}>● Ocupado</span>
-                </div>
-              </div>
-            )}
-
-            {step === "confirm" && (
-              <div>
-                <button onClick={() => setStep("time")} style={{ background: "none", border: "none", color: C.goldBright, cursor: "pointer", fontSize: 12, marginBottom: 14, padding: 0, display: "flex", alignItems: "center", gap: 4 }}>
-                  {Ic.chevL} Voltar
-                </button>
-                <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 14, marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, color: C.fgMuted, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>Resumo</div>
-                  {[["Serviço", selSvc.name + " · " + fmtMoney(selSvc.price)], ["Barbeiro", selBarber.name], ["Data", fmtShort(selDate)], ["Horário", selTime]].map(([l, v]) => (
-                    <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + C.border }}>
-                      <span style={{ fontSize: 12, color: C.fgMuted }}>{l}</span>
-                      <span style={{ fontSize: 12, color: C.fg, fontWeight: 600 }}>{v}</span>
-                    </div>
-                  ))}
-                </div>
-                {isReturning && (
-                  <div style={{
-                    background: C.greenDim, border: "1px solid " + C.green + "30",
-                    borderRadius: 10, padding: "10px 12px", marginBottom: 12,
-                    fontSize: 11, color: C.green, lineHeight: 1.5,
-                  }}>
-                    ✓ Dados preenchidos automaticamente
-                  </div>
-                )}
-                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
-                  <input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="Seu nome completo"
-                    style={{ padding: "11px 14px", borderRadius: 8, border: "1px solid " + C.border, background: C.card, color: C.fg, fontSize: 14, outline: "none" }} />
-                  <input value={clientPhone} onChange={e => setClientPhone(e.target.value)} placeholder="Seu WhatsApp (recomendado)"
-                    style={{ padding: "11px 14px", borderRadius: 8, border: "1px solid " + C.border, background: C.card, color: C.fg, fontSize: 14, outline: "none" }} />
-                </div>
-                <button onClick={confirm} disabled={!clientName.trim() || submitting} style={{
-                  width: "100%", padding: 14, borderRadius: 10, border: "none",
-                  background: clientName.trim() && !submitting ? C.goldBright : C.faded,
-                  color: clientName.trim() && !submitting ? "#1A1A1A" : C.muted,
-                  fontSize: 14, fontWeight: 700,
-                  cursor: clientName.trim() && !submitting ? "pointer" : "not-allowed",
-                }}>{submitting ? "Confirmando…" : "Confirmar agendamento"}</button>
-              </div>
-            )}
-
-            {step === "done" && confirmed && (
-              <div style={{ textAlign: "center", padding: "24px 0" }}>
-                <div style={{
-                  width: 64, height: 64, borderRadius: "50%",
-                  background: C.greenDim, border: "2px solid " + C.green,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 30, color: C.green, margin: "0 auto 18px",
-                }}>✓</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: C.fg, marginBottom: 8, fontFamily: "Georgia, serif" }}>
-                  Agendamento confirmado!
-                </div>
-                <div style={{ fontSize: 13, color: C.fgMuted, marginBottom: 20, lineHeight: 1.6 }}>
-                  {confirmed.client}<br />
-                  {confirmed.service.name} · {confirmed.barber.name}<br />
-                  <b style={{ color: C.goldBright }}>{fmtShort(confirmed.date)} às {confirmed.time}</b>
-                </div>
-                <button onClick={reset} style={{
-                  padding: "10px 24px", borderRadius: 10,
-                  border: "1px solid " + C.border, background: "transparent",
-                  color: C.goldBright, fontSize: 13, fontWeight: 600, cursor: "pointer",
-                }}>Fazer outro agendamento</button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <p style={{ textAlign: "center", marginTop: 18, fontSize: 11, color: C.muted }}>
-          Powered by <span style={{ color: C.goldBright, fontWeight: 600 }}>Fadein</span>
-        </p>
+    <div className="fade-in">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: C.fg, fontFamily: "Georgia, serif" }}>Estoque</h1>
+        <Btn sm onClick={openNew} icon={Ic.plus}>Adicionar produto</Btn>
       </div>
-    </div>
-  );
-}
 
-// ═══════════════════════════════════════════════════════════════════════════
-// UPGRADE VIEW — bloqueio premium com call to action
-// ═══════════════════════════════════════════════════════════════════════════
-function UpgradeView({ feature, plan, navigate }) {
-  const featureLabels = {
-    financeiro: { title: "Financeiro completo", desc: "Controle todas as entradas e saídas, receita por método de pagamento, e relatórios mensais." },
-    comissoes:  { title: "Comissões automáticas", desc: "Cálculo automático da comissão de cada barbeiro a cada atendimento concluído. Fim das planilhas." },
-    barbeiros:  { title: "Mais barbeiros", desc: "Adicione mais profissionais à sua equipe e controle a agenda de cada um separadamente." },
-  };
-  const info = featureLabels[feature] || { title: "Recurso premium", desc: "" };
-  const recommended = feature === "barbeiros" ? "pro" : "pro";
-  const planInfo = PLANS[recommended];
-
-  return (
-    <div className="fade-in" style={{ maxWidth: 720, margin: "0 auto", padding: "20px 0" }}>
-      <div style={{
-        background: "linear-gradient(135deg, " + C.card + " 0%, " + C.card2 + " 100%)",
-        border: "1px solid " + C.goldBright + "30", borderRadius: 18,
-        padding: "32px 28px", textAlign: "center",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.25)",
-      }}>
-        <div style={{
-          width: 56, height: 56, borderRadius: "50%",
-          background: C.goldDim, color: C.goldBright,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          margin: "0 auto 16px", fontSize: 26,
-        }}>🔒</div>
-
-        <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
-          Disponível no plano {planInfo.name}
+      {low.length > 0 && (
+        <div style={{ background: C.redDim, border: "1px solid " + C.red + "30", borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: C.red, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+          {Ic.warning} Estoque baixo: {low.map(p => p.name).join(", ")}
         </div>
-        <h1 style={{ fontSize: 26, fontWeight: 700, margin: "0 0 10px", color: C.fg, fontFamily: "Georgia, serif", letterSpacing: -0.3 }}>
-          {info.title}
-        </h1>
-        <p style={{ fontSize: 14, color: C.fgMuted, margin: "0 auto 24px", maxWidth: 480, lineHeight: 1.5 }}>{info.desc}</p>
+      )}
 
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 6, marginBottom: 24 }}>
-          <span style={{ fontSize: 14, color: C.fgMuted }}>R$</span>
-          <span style={{ fontSize: 44, fontWeight: 700, color: C.goldBright, letterSpacing: -1, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
-            {planInfo.price}
-          </span>
-          <span style={{ fontSize: 13, color: C.fgMuted }}>/mês</span>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 20 }}>
+        <KPI label="Total de itens" value={String(products.length)} />
+        <KPI label="Valor em estoque" value={fmtMoney(products.reduce((s, p) => s + p.cost * p.qty, 0))} />
+        <KPI label="Estoque baixo" value={String(low.length)} note={low.length === 0 ? "tudo ok" : "repor em breve"} up={low.length === 0} />
+      </div>
+
+      <div className="table-scroll" style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ minWidth: 640 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 90px 100px 75px 75px 90px", gap: 8, padding: "10px 18px", borderBottom: "1px solid " + C.border, fontSize: 10, color: C.fgMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+          <span>Produto</span><span>Categoria</span><span>Qtd</span><span>Custo</span><span>Venda</span><span>Ações</span>
         </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 360, margin: "0 auto 24px", textAlign: "left" }}>
-          {[
-            "Agenda + link de agendamento online",
-            "Financeiro completo com gráficos",
-            "Comissões automáticas por barbeiro",
-            "Até 3 barbeiros",
-            "Suporte via WhatsApp",
-            "Cancele quando quiser",
-          ].map((b, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: C.fg }}>
-              <span style={{
-                width: 18, height: 18, borderRadius: "50%",
-                background: C.greenDim, color: C.green,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 11, fontWeight: 700, flexShrink: 0,
-              }}>✓</span>
-              {b}
+        {products.map(p => (
+          <div key={p.id} style={{
+            display: "grid", gridTemplateColumns: "2fr 90px 100px 75px 75px 90px",
+            gap: 8, alignItems: "center", padding: "12px 18px", borderBottom: "1px solid " + C.border,
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.fg }}>{p.name}</div>
+            <Badge color={p.cat === "Interno" ? C.blue : C.goldBright}>{p.cat}</Badge>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <button onClick={() => setProducts(ps => ps.map(x => x.id === p.id ? { ...x, qty: Math.max(0, x.qty - 1) } : x))}
+                style={{ width: 24, height: 24, borderRadius: 5, border: "1px solid " + C.border, background: C.bgSunken, color: C.fg, cursor: "pointer", fontSize: 13 }}>−</button>
+              <span style={{ fontSize: 14, fontWeight: 700, color: p.qty <= p.min ? C.red : C.fg, minWidth: 24, textAlign: "center" }}>{p.qty}</span>
+              <button onClick={() => setProducts(ps => ps.map(x => x.id === p.id ? { ...x, qty: x.qty + 1 } : x))}
+                style={{ width: 24, height: 24, borderRadius: 5, border: "1px solid " + C.border, background: C.bgSunken, color: C.fg, cursor: "pointer", fontSize: 13 }}>+</button>
             </div>
-          ))}
+            <span style={{ fontSize: 12, color: C.fgMuted }}>{fmtMoney(p.cost)}</span>
+            <span style={{ fontSize: 12, color: p.price > 0 ? C.green : C.fgMuted }}>{p.price > 0 ? fmtMoney(p.price) : "—"}</span>
+            <div style={{ display: "flex", gap: 4 }}>
+              <button onClick={() => openEdit(p)} style={{ padding: "5px 8px", borderRadius: 6, border: "none", background: C.goldDim, color: C.goldBright, cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+                {Ic.edit}
+              </button>
+              <button onClick={() => setConfirming(p)} style={{ padding: "5px 8px", borderRadius: 6, border: "none", background: C.redDim, color: C.red, cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center" }}>
+                {Ic.trash}
+              </button>
+            </div>
+          </div>
+        ))}
         </div>
-
-        <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-          <Btn onClick={() => {
-            const msg = encodeURIComponent("Olá! Quero fazer upgrade pro plano " + planInfo.name + " do Fadein.");
-            window.open("https://wa.me/?text=" + msg, "_blank");
-          }}>Quero fazer upgrade</Btn>
-          <Btn v="ghost" onClick={() => navigate("dashboard")}>Voltar ao dashboard</Btn>
-        </div>
-
-        <p style={{ fontSize: 11, color: C.muted, marginTop: 18 }}>
-          Plano atual: <b style={{ color: C.fgMuted, textTransform: "capitalize" }}>{(PLANS[plan] || PLANS.starter).name}</b>
-        </p>
       </div>
+
+      {modal && (
+        <Modal title={editing ? "Editar produto" : "Novo produto"} onClose={() => { setModal(false); setEditing(null); }}>
+          <Inp label="Nome" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} placeholder="Ex: Pomada Matte" />
+          <Sel label="Categoria" value={form.cat} onChange={e => setForm(p => ({ ...p, cat: e.target.value }))}
+            options={["Pomada","Barba","Interno","Outro"].map(v => ({ v, l: v }))} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <Inp label="Quantidade" type="number" value={form.qty} onChange={e => setForm(p => ({ ...p, qty: e.target.value }))} />
+            <Inp label="Mínimo" type="number" value={form.min} onChange={e => setForm(p => ({ ...p, min: e.target.value }))} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <Inp label="Custo (R$)" type="number" value={form.cost} onChange={e => setForm(p => ({ ...p, cost: e.target.value }))} />
+            <Inp label="Venda (R$)" type="number" value={form.price} onChange={e => setForm(p => ({ ...p, price: e.target.value }))} placeholder="0 = uso interno" />
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            <Btn onClick={save} full>{editing ? "Salvar" : "Adicionar"}</Btn>
+            <Btn v="ghost" onClick={() => { setModal(false); setEditing(null); }}>Cancelar</Btn>
+          </div>
+        </Modal>
+      )}
+
+      <ConfirmDialog
+        open={!!confirming}
+        title="Excluir produto?"
+        message={confirming ? `Tem certeza que quer excluir "${confirming.name}"? Esta ação não pode ser desfeita.` : ""}
+        onConfirm={() => { setProducts(p => p.filter(x => x.id !== confirming.id)); setConfirming(null); }}
+        onCancel={() => setConfirming(null)}
+        danger
+      />
     </div>
   );
 }
@@ -3592,46 +2851,6 @@ function Config({ shop, services, setServices, onLogout, barbers, addBarber, upd
       {saved && <div style={{ background: C.greenDim, border: "1px solid " + C.green + "40", borderRadius: 10, padding: "10px 16px", marginBottom: 16, fontSize: 13, color: C.green, fontWeight: 600 }}>✓ Salvo com sucesso</div>}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 540 }}>
-        {/* Card de plano: status atual + CTA upgrade */}
-        <div style={{
-          background: shop.plan === "premium"
-            ? "linear-gradient(135deg, " + C.card + " 0%, " + C.card2 + " 100%)"
-            : C.card,
-          border: "1px solid " + (shop.plan === "starter" ? C.amber + "40" : C.goldBright + "30"),
-          borderRadius: 12, padding: 20,
-          position: "relative", overflow: "hidden",
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-            <div>
-              <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 6 }}>
-                Plano atual
-              </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                <span style={{ fontSize: 22, fontWeight: 700, color: C.fg, fontFamily: "Georgia, serif" }}>
-                  {(PLANS[shop.plan] || PLANS.starter).name}
-                </span>
-                <span style={{ fontSize: 13, color: C.fgMuted }}>
-                  R$ {(PLANS[shop.plan] || PLANS.starter).price}/mês
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: C.fgMuted, marginTop: 6 }}>
-                {shop.plan === "starter" && "Agenda + link de agendamento. Até 1 barbeiro."}
-                {shop.plan === "pro"     && "Tudo do Starter + Financeiro + Comissões. Até 3 barbeiros."}
-                {shop.plan === "premium" && "Tudo do Pro + barbeiros ilimitados + multi-unidade."}
-              </div>
-            </div>
-            {shop.plan !== "premium" && (
-              <Btn sm onClick={() => {
-                const next = shop.plan === "starter" ? "Pro" : "Premium";
-                const msg = encodeURIComponent("Olá! Quero fazer upgrade pro plano " + next + " do Fadein.");
-                window.open("https://wa.me/?text=" + msg, "_blank");
-              }}>
-                Fazer upgrade
-              </Btn>
-            )}
-          </div>
-        </div>
-
         <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
           <h3 style={{ fontSize: 14, fontWeight: 600, color: C.fg, margin: "0 0 14px" }}>Dados da barbearia</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -3663,40 +2882,9 @@ function Config({ shop, services, setServices, onLogout, barbers, addBarber, upd
 
         <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: C.fg, margin: 0 }}>
-              Equipe
-              <span style={{ fontSize: 11, color: C.fgMuted, fontWeight: 500, marginLeft: 8 }}>
-                {barbers.length}{(PLANS[shop.plan] || PLANS.starter).maxBarbers === Infinity ? "" : "/" + (PLANS[shop.plan] || PLANS.starter).maxBarbers}
-              </span>
-            </h3>
-            {(() => {
-              const max = (PLANS[shop.plan] || PLANS.starter).maxBarbers;
-              const reached = barbers.length >= max;
-              return reached ? (
-                <Btn sm v="ghost" onClick={() => {
-                  const msg = encodeURIComponent("Olá! Quero adicionar mais barbeiros — preciso fazer upgrade do plano.");
-                  window.open("https://wa.me/?text=" + msg, "_blank");
-                }}>🔒 Limite atingido</Btn>
-              ) : (
-                <Btn sm icon={Ic.plus} onClick={openNewBarber}>Novo barbeiro</Btn>
-              );
-            })()}
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: C.fg, margin: 0 }}>Equipe</h3>
+            <Btn sm icon={Ic.plus} onClick={openNewBarber}>Novo barbeiro</Btn>
           </div>
-          {(() => {
-            const max = (PLANS[shop.plan] || PLANS.starter).maxBarbers;
-            if (barbers.length >= max && max !== Infinity) {
-              return (
-                <div style={{
-                  background: C.amberDim, border: "1px solid " + C.amber + "30",
-                  borderRadius: 8, padding: "10px 12px", marginBottom: 10,
-                  fontSize: 12, color: C.amber, lineHeight: 1.5,
-                }}>
-                  Seu plano <b>{(PLANS[shop.plan] || PLANS.starter).name}</b> permite até <b>{max}</b> barbeiro{max > 1 ? "s" : ""}. Faça upgrade pra adicionar mais.
-                </div>
-              );
-            }
-            return null;
-          })()}
           {barbers.length === 0 && (
             <p style={{ fontSize: 12, color: C.fgMuted, margin: 0, padding: "10px 0" }}>
               Nenhum barbeiro cadastrado. Clique em "Novo barbeiro" para começar.
@@ -3821,34 +3009,13 @@ const NAV = [
   { id: "agenda",     label: "Agenda",     icon: Ic.calendar  },
   { id: "financeiro", label: "Financeiro", icon: Ic.money     },
   { id: "comissoes",  label: "Comissões",  icon: Ic.scissors  },
+  { id: "estoque",    label: "Estoque",    icon: Ic.box       },
   { id: "clientes",   label: "Clientes",   icon: Ic.users     },
   { id: "link",       label: "Link",       icon: Ic.link      },
   { id: "config",     label: "Config",     icon: Ic.gear      },
 ];
 
 export default function App() {
-  // ── Roteamento: link público de agendamento ──────────────────────────────
-  // Suporta /agendar/{slug} (path) e ?agendar={slug} (query) para máxima
-  // compatibilidade entre hospedagens (Vercel, Netlify, etc).
-  const publicSlug = useMemo(() => {
-    if (typeof window === "undefined") return null;
-    const path = window.location.pathname || "";
-    const m = path.match(/\/agendar\/([a-z0-9-]+)/i);
-    if (m) return m[1].toLowerCase();
-    const params = new URLSearchParams(window.location.search);
-    const q = params.get("agendar");
-    if (q) return q.toLowerCase();
-    return null;
-  }, []);
-
-  // Se for link público, renderiza somente a página de booking (sem auth)
-  if (publicSlug) return (
-    <>
-      <style>{GLOBAL_CSS}</style>
-      <PublicBooking slug={publicSlug} />
-    </>
-  );
-
   const [shop,     setShop]     = useState(null);
   const [barbers,  setBarbersState] = useState([]); // carregado do Supabase
   const [authReady, setAuthReady] = useState(false);
@@ -3856,6 +3023,7 @@ export default function App() {
   const [page,     setPage]     = useState("dashboard");
   const [services, setServices] = useState([]); // carregado do Supabase
   const [clients,  setClients]  = useState([]); // carregado do Supabase
+  const [products, setProducts] = useState(PRODUCTS_INIT);
   const [appts,    setAppts]    = useState([]); // carregado do Supabase
   const [txns,     setTxns]     = useState([]); // carregado do Supabase
   const [hydrated, setHydrated] = useState(false);
@@ -4270,18 +3438,16 @@ export default function App() {
           name: data.name || "Minha Barbearia",
           address: data.address || "",
           color: "#C9982A",
-          plan: data.plan || "starter",
-          slug: data.slug || slugify(data.name || ""),
         });
-        console.log("[fadein] shop set:", data.name, "| plan:", data.plan || "starter");
+        console.log("[fadein] shop set:", data.name);
       } else {
         console.log("[fadein] no shop found, creating…");
         const { data: created, error: cErr } = await withTimeout(
-          supabase.from("shops").insert({ user_id: uid, name: "Minha Barbearia", plan: "starter" }).select().maybeSingle(),
+          supabase.from("shops").insert({ user_id: uid, name: "Minha Barbearia" }).select().maybeSingle(),
           8000, "insert shops"
         );
         console.log("[fadein] create result:", { created, cErr });
-        if (created) setShop({ id: created.id, name: created.name, address: "", color: "#C9982A", plan: "starter", slug: slugify(created.name || "") });
+        if (created) setShop({ id: created.id, name: created.name, address: "", color: "#C9982A" });
       }
     } catch (e) {
       console.error("[fadein] loadShop fatal:", e?.message || e);
@@ -4362,11 +3528,33 @@ export default function App() {
     if (shop?.id) await loadBarbers(shop.id);
   }, [shop?.id, loadBarbers]);
 
-  // ── PERSISTÊNCIA local (services, clients, appts, txns vêm do Supabase) ──
+  // ── PERSISTÊNCIA local (services, clients, products, appts, txns) ───────
+  // Carrega ao logar
   useEffect(() => {
     if (!shop || hydrated) return;
+    try {
+      const key = "fadein:shop:" + shop.id + ":data";
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const data = JSON.parse(raw);
+        if (data.products) setProducts(data.products);
+        // appts, clients, txns, services: vêm do Supabase
+      }
+    } catch (e) { /* primeira vez, sem dados ainda */ }
     setHydrated(true);
   }, [shop, hydrated]);
+
+  // Salva quando muda algo (debounced) — só products no localStorage
+  useEffect(() => {
+    if (!shop || !hydrated) return;
+    const t = setTimeout(() => {
+      try {
+        const key = "fadein:shop:" + shop.id + ":data";
+        localStorage.setItem(key, JSON.stringify({ products }));
+      } catch (e) { /* ignora (quota etc.) */ }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [shop, hydrated, products]);
 
   // Tela de loading enquanto verifica sessão
   if (!authReady) return (
@@ -4396,6 +3584,7 @@ export default function App() {
   );
 
   const todayCount = appts.filter(a => a.date === TODAY_DS).length;
+  const lowCount   = products.filter(p => p.qty <= p.min).length;
   const pendingCount = appts.filter(a => a.date === TODAY_DS && a.status === "pending").length;
 
   return (
@@ -4412,42 +3601,26 @@ export default function App() {
           <div style={{
             fontSize: 11, color: C.fgMuted, marginTop: 8,
             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            display: "flex", alignItems: "center", gap: 6,
-          }}>
-            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{shop.name}</span>
-            <span style={{
-              fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4,
-              background: shop.plan === "premium" ? C.goldDim : shop.plan === "pro" ? C.greenDim : C.bgSunken,
-              color:      shop.plan === "premium" ? C.goldBright : shop.plan === "pro" ? C.green : C.fgMuted,
-              textTransform: "uppercase", letterSpacing: 0.5, flexShrink: 0,
-            }}>{(PLANS[shop.plan] || PLANS.starter).name}</span>
-          </div>
+          }}>{shop.name}</div>
         </div>
 
         <nav style={{ flex: 1, padding: "10px 8px", overflowY: "auto" }}>
           {NAV.map(n => {
             const active = page === n.id;
-            const badge = n.id === "agenda" ? todayCount : 0;
-            const badgeColor = C.goldBright;
-            // Mapeia item do menu pro feature do plano
-            const featureKey = n.id === "financeiro" ? "financeiro"
-                            : n.id === "comissoes"  ? "comissoes" : null;
-            const locked = featureKey ? !hasFeature(shop.plan, featureKey) : false;
+            const badge = n.id === "agenda" ? todayCount : n.id === "estoque" ? lowCount : 0;
+            const badgeColor = n.id === "estoque" ? C.red : C.goldBright;
             return (
               <button key={n.id} onClick={() => setPage(n.id)} style={{
                 display: "flex", alignItems: "center", gap: 10, width: "100%",
                 padding: "10px 14px", borderRadius: 8, border: "none", marginBottom: 2,
                 background: active ? C.goldDim : "transparent",
-                color: active ? C.goldBright : locked ? C.muted : C.fgMuted,
+                color: active ? C.goldBright : C.fgMuted,
                 fontSize: 13, fontWeight: active ? 600 : 500,
                 cursor: "pointer", textAlign: "left", fontFamily: "inherit",
               }}>
                 <span style={{ display: "flex", alignItems: "center" }}>{n.icon}</span>
                 <span style={{ flex: 1 }}>{n.label}</span>
-                {locked && (
-                  <span title="Disponível no plano Pro" style={{ fontSize: 10, opacity: 0.7 }}>🔒</span>
-                )}
-                {badge > 0 && !locked && (
+                {badge > 0 && (
                   <span style={{
                     background: badgeColor, color: badgeColor === C.red ? "#fff" : "#1A1A1A",
                     fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10,
@@ -4502,12 +3675,9 @@ export default function App() {
       <main className="app-main">
         {page === "dashboard"  && <Dashboard  appts={appts} txns={txns} services={services} navigate={setPage} />}
         {page === "agenda"     && <Agenda     appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} setTxns={setTxns} barbers={barbers} createAppt={createAppt} updateAppt={updateAppt} cancelAppt={cancelAppt} upsertClientFromAppt={upsertClientFromAppt} createTxn={createTxn} />}
-        {page === "financeiro" && (hasFeature(shop.plan, "financeiro")
-          ? <Financeiro txns={txns} setTxns={setTxns} navigate={setPage} createTxn={createTxn} deleteTxn={deleteTxn} />
-          : <UpgradeView feature="financeiro" plan={shop.plan} navigate={setPage} />)}
-        {page === "comissoes"  && (hasFeature(shop.plan, "comissoes")
-          ? <Comissoes txns={txns} appts={appts} services={services} setServices={setServices} barbers={barbers} />
-          : <UpgradeView feature="comissoes" plan={shop.plan} navigate={setPage} />)}
+        {page === "financeiro" && <Financeiro txns={txns}   setTxns={setTxns}   navigate={setPage} createTxn={createTxn} deleteTxn={deleteTxn} />}
+        {page === "comissoes"  && <Comissoes  txns={txns}   appts={appts}       services={services} setServices={setServices} barbers={barbers} />}
+        {page === "estoque"    && <Estoque    products={products} setProducts={setProducts} />}
         {page === "clientes"   && <Clientes   clients={clients}   setClients={setClients}   appts={appts} navigate={setPage} barbers={barbers} createClient={createClient} updateClient={updateClient} deleteClient={deleteClient} />}
         {page === "link"       && <LinkAgendamento shop={shop} appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} barbers={barbers} createAppt={createAppt} upsertClientFromAppt={upsertClientFromAppt} />}
         {page === "config"     && <Config     shop={shop} services={services} setServices={setServices} onLogout={() => supabase.auth.signOut()} barbers={barbers} addBarber={addBarber} updateBarber={updateBarber} deleteBarber={deleteBarber} createService={createService} updateService={updateService} deleteService={deleteService} />}
@@ -4515,7 +3685,7 @@ export default function App() {
 
       {/* Bottom navigation mobile (5 itens principais) */}
       <nav className="app-bottom-nav">
-        {NAV.filter(n => ["dashboard","agenda","link","clientes","config"].includes(n.id)).map(n => (
+        {NAV.filter(n => ["dashboard","agenda","financeiro","clientes","config"].includes(n.id)).map(n => (
           <button key={n.id} onClick={() => setPage(n.id)} className={page === n.id ? "active" : ""}>
             {n.icon}
             <span>{n.label}</span>
