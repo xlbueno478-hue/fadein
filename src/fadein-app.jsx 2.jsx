@@ -89,10 +89,10 @@ const GLOBAL_CSS = `
   .dashboard-chart-wrap { display: block; width: 100%; }
   .dashboard-chart-wrap svg { width: 100%; display: block; }
   @media (min-width: 769px) {
-    .dashboard-chart-wrap svg { min-height: 380px; max-height: 520px; }
+    .dashboard-chart-wrap svg { min-height: 280px; max-height: 380px; }
   }
   @media (max-width: 768px) {
-    .dashboard-chart-wrap svg { min-height: 240px; max-height: 320px; }
+    .dashboard-chart-wrap svg { min-height: 200px; max-height: 260px; }
   }
 
   /* ────────────────────── MOBILE RESPONSIVO ────────────────────── */
@@ -999,7 +999,7 @@ function Dashboard({ appts, txns, services, navigate }) {
   const svcMax = svcRev.length ? svcRev[0][1] : 1;
 
   // Area chart points (aumentado pra ocupar todo o espaço do dashboard)
-  const SVG_W = 1200, SVG_H = 380, PAD = 28;
+  const SVG_W = 600, SVG_H = 280, PAD = 22;
   const linePts = pts.map((p, i) => {
     const x = PAD + (i / Math.max(pts.length - 1, 1)) * (SVG_W - PAD * 2);
     const y = SVG_H - PAD - (p.val / maxVal) * (SVG_H - PAD * 2);
@@ -1177,7 +1177,7 @@ function Dashboard({ appts, txns, services, navigate }) {
         </div>
 
         <div className="dashboard-chart-wrap" style={{ position: "relative" }}>
-          <svg width="100%" viewBox={"0 0 " + SVG_W + " " + SVG_H} preserveAspectRatio="xMidYMid meet" style={{ display: "block", width: "100%", overflow: "visible" }}>
+          <svg width="100%" viewBox={"0 0 " + SVG_W + " " + SVG_H} style={{ display: "block", overflow: "visible" }}>
             <defs>
               <linearGradient id="dashArea" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%"  stopColor={C.goldBright} stopOpacity="0.4" />
