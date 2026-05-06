@@ -85,14 +85,14 @@ const GLOBAL_CSS = `
   button:active:not(:disabled) { transform: scale(0.98); }
 
   /* ────────────────────── DASHBOARD CHART RESIZING ────────────────────── */
-  /* Desktop: limita largura do SVG pra não esticar a altura */
-  .dashboard-chart-wrap { display: flex; justify-content: center; }
-  .dashboard-chart-wrap svg { width: 100%; max-width: 720px; }
+  /* Ocupa toda a largura do container, sem cap horizontal — preenche o espaço do app */
+  .dashboard-chart-wrap { display: block; width: 100%; }
+  .dashboard-chart-wrap svg { width: 100%; display: block; }
   @media (min-width: 769px) {
-    .dashboard-chart-wrap svg { max-height: 220px; }
+    .dashboard-chart-wrap svg { min-height: 380px; max-height: 520px; }
   }
   @media (max-width: 768px) {
-    .dashboard-chart-wrap svg { max-height: 180px; }
+    .dashboard-chart-wrap svg { min-height: 240px; max-height: 320px; }
   }
 
   /* ────────────────────── MOBILE RESPONSIVO ────────────────────── */
@@ -998,8 +998,8 @@ function Dashboard({ appts, txns, services, navigate }) {
   }, [m30Txns]);
   const svcMax = svcRev.length ? svcRev[0][1] : 1;
 
-  // Area chart points
-  const SVG_W = 600, SVG_H = 180, PAD = 16;
+  // Area chart points (aumentado pra ocupar todo o espaço do dashboard)
+  const SVG_W = 1200, SVG_H = 380, PAD = 28;
   const linePts = pts.map((p, i) => {
     const x = PAD + (i / Math.max(pts.length - 1, 1)) * (SVG_W - PAD * 2);
     const y = SVG_H - PAD - (p.val / maxVal) * (SVG_H - PAD * 2);
@@ -1177,7 +1177,7 @@ function Dashboard({ appts, txns, services, navigate }) {
         </div>
 
         <div className="dashboard-chart-wrap" style={{ position: "relative" }}>
-          <svg width="100%" viewBox={"0 0 " + SVG_W + " " + SVG_H} style={{ display: "block", overflow: "visible" }}>
+          <svg width="100%" viewBox={"0 0 " + SVG_W + " " + SVG_H} preserveAspectRatio="xMidYMid meet" style={{ display: "block", width: "100%", overflow: "visible" }}>
             <defs>
               <linearGradient id="dashArea" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%"  stopColor={C.goldBright} stopOpacity="0.4" />
@@ -2262,14 +2262,27 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients,
   const origin = (typeof window !== "undefined" && window.location.origin) ? window.location.origin : "https://fadein.app";
   const link = origin + "/agendar/" + slug;
 
+  // Dias disponíveis: respeita os dias de funcionamento configurados em Config.
+  // workDays usa convenção JS: 0=Dom, 1=Seg, ..., 6=Sáb.
+  const workDays = Array.isArray(shop.workDays) && shop.workDays.length > 0
+    ? shop.workDays
+    : [1, 2, 3, 4, 5, 6]; // fallback: seg-sáb
+
   const bookDates = useMemo(() => {
     const arr = [];
     for (let i = 0; i <= 30; i++) {
       const ds = toDS(addDays(BASE_DATE, i));
-      if (parseDS(ds).getDay() !== 0) arr.push(ds);
+      if (workDays.includes(parseDS(ds).getDay())) arr.push(ds);
     }
     return arr;
-  }, []);
+  }, [workDays]);
+
+  // Slots de horário: filtra HOURS pelo openTime/closeTime do shop
+  const dayHours = useMemo(() => {
+    const open  = shop.openTime  || "08:00";
+    const close = shop.closeTime || "20:00";
+    return HOURS.filter(h => h >= open && h < close);
+  }, [shop.openTime, shop.closeTime]);
 
   const allSlotsInfo = useMemo(() => {
     if (!selBarber || !selSvc) return [];
@@ -2280,12 +2293,12 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients,
         const s = h * 60 + m;
         return { s, e: s + a.service.duration };
       });
-    return HOURS.map(slot => {
+    return dayHours.map(slot => {
       const [h, m] = slot.split(":").map(Number);
       const s = h * 60 + m, e = s + selSvc.duration;
       return { time: slot, available: !busy.some(b => s < b.e && e > b.s) };
     });
-  }, [selDate, selBarber, selSvc, appts]);
+  }, [selDate, selBarber, selSvc, appts, dayHours]);
 
   function reset() {
     setStep("service"); setSelSvc(null); setSelBarber(null);
@@ -2566,6 +2579,11 @@ function PublicBooking({ slug }) {
   const [confirmed, setConfirmed]     = useState(null);
   const [submitting, setSubmitting]   = useState(false);
 
+  // Bloqueio de agendamento duplo: se cliente já tem agendamento ativo no futuro,
+  // mostra apenas as informações dele (não permite novo agendamento até a data do corte)
+  const [existingBooking, setExistingBooking]   = useState(null);
+  const [checkingExisting, setCheckingExisting] = useState(true);
+
   // Cliente recorrente: tenta recuperar dados salvos para este shop
   useEffect(() => {
     if (!slug) return;
@@ -2600,7 +2618,14 @@ function PublicBooking({ slug }) {
         if (cancelled) return;
         if (!shopData) { setErrMsg("Página de agendamento não encontrada."); setLoading(false); return; }
 
-        setShop({ id: shopData.id, name: shopData.name, address: shopData.address || "" });
+        setShop({
+          id: shopData.id,
+          name: shopData.name,
+          address: shopData.address || "",
+          openTime:  shopData.open_time  || "08:00",
+          closeTime: shopData.close_time || "20:00",
+          workDays:  Array.isArray(shopData.work_days) ? shopData.work_days : [1, 2, 3, 4, 5, 6],
+        });
 
         // 2) Carrega serviços ativos
         const { data: svcs } = await supabase.from("services")
@@ -2655,13 +2680,97 @@ function PublicBooking({ slug }) {
   }, [slug]);
 
   const bookDates = useMemo(() => {
+    const workDays = Array.isArray(shop?.workDays) && shop.workDays.length > 0
+      ? shop.workDays
+      : [1, 2, 3, 4, 5, 6];
     const arr = [];
     for (let i = 0; i <= 30; i++) {
       const ds = toDS(addDays(BASE_DATE, i));
-      if (parseDS(ds).getDay() !== 0) arr.push(ds);
+      if (workDays.includes(parseDS(ds).getDay())) arr.push(ds);
     }
     return arr;
-  }, []);
+  }, [shop?.workDays]);
+
+  // Slots de horário: filtra pelo openTime/closeTime configurado pela barbearia
+  const dayHours = useMemo(() => {
+    const open  = shop?.openTime  || "08:00";
+    const close = shop?.closeTime || "20:00";
+    return HOURS.filter(h => h >= open && h < close);
+  }, [shop?.openTime, shop?.closeTime]);
+
+  // Verifica se o cliente já tem agendamento ativo no futuro (impede agendamentos duplos).
+  // Roda depois do shop+barbers carregarem; libera novo agendamento só após a data do corte
+  // ou se o agendamento foi cancelado.
+  useEffect(() => {
+    if (!slug || !shop?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = localStorage.getItem("fadein:client:" + slug);
+        if (!raw) { if (!cancelled) setCheckingExisting(false); return; }
+        const saved = JSON.parse(raw);
+        if (!saved?.booking?.id) { if (!cancelled) setCheckingExisting(false); return; }
+
+        // Confirma no DB que o agendamento ainda existe e está ativo
+        const { data: appt } = await supabase.from("appointments")
+          .select("id, status, date, time, client_name, service, service_data, price, barber_id")
+          .eq("id", saved.booking.id).maybeSingle();
+
+        if (cancelled) return;
+
+        // Cancelado, deletado ou inexistente → libera novo agendamento
+        if (!appt || appt.status === "cancelled") {
+          const { booking: _drop, ...rest } = saved;
+          localStorage.setItem("fadein:client:" + slug, JSON.stringify(rest));
+          setCheckingExisting(false);
+          return;
+        }
+
+        // Data do corte já passou → libera novo agendamento
+        const dt = new Date(appt.date);
+        const dateStr = dt.getFullYear() + "-" + pad(dt.getMonth() + 1) + "-" + pad(dt.getDate());
+        if (dateStr < TODAY_DS) {
+          const { booking: _drop, ...rest } = saved;
+          localStorage.setItem("fadein:client:" + slug, JSON.stringify(rest));
+          setCheckingExisting(false);
+          return;
+        }
+
+        // Agendamento ativo no futuro: bloqueia novo agendamento, mostra info
+        let svc = null;
+        try {
+          svc = appt.service_data
+            ? (typeof appt.service_data === "string" ? JSON.parse(appt.service_data) : appt.service_data)
+            : null;
+        } catch (e) { svc = null; }
+        if (!svc) svc = {
+          name:  appt.service || saved.booking.serviceName || "Serviço",
+          price: parseFloat(appt.price) || saved.booking.servicePrice || 0,
+        };
+
+        const barber = barbers.find(b => b.id === appt.barber_id) || {
+          id: appt.barber_id,
+          name:   saved.booking.barberName   || "—",
+          color:  saved.booking.barberColor  || "#888",
+          avatar: saved.booking.barberAvatar || "?",
+        };
+
+        setExistingBooking({
+          id: appt.id,
+          date: dateStr,
+          time: appt.time || saved.booking.time,
+          client: appt.client_name || saved.name,
+          service: svc,
+          barber,
+          status: appt.status || "pending",
+        });
+        setCheckingExisting(false);
+      } catch (e) {
+        if (!cancelled) setCheckingExisting(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [slug, shop?.id, barbers]);
 
   const allSlotsInfo = useMemo(() => {
     if (!selBarber || !selSvc) return [];
@@ -2672,12 +2781,12 @@ function PublicBooking({ slug }) {
         const s = h * 60 + m;
         return { s, e: s + (a.service?.duration || 30) };
       });
-    return HOURS.map(slot => {
+    return dayHours.map(slot => {
       const [h, m] = slot.split(":").map(Number);
       const s = h * 60 + m, e = s + selSvc.duration;
       return { time: slot, available: !busy.some(b => s < b.e && e > b.s) };
     });
-  }, [selDate, selBarber, selSvc, appts]);
+  }, [selDate, selBarber, selSvc, appts, dayHours]);
 
   function reset() {
     setStep("service"); setSelSvc(null); setSelBarber(null);
@@ -2733,20 +2842,37 @@ function PublicBooking({ slug }) {
         }
       } catch (e) { /* não bloqueia o agendamento */ }
 
-      // Salva pra próxima vez (não vai pedir os dados de novo)
+      // Salva pra próxima vez (não vai pedir os dados de novo) + bloqueia novo agendamento
+      // até a data do corte ou cancelamento (impede agendamentos duplos)
       try {
         localStorage.setItem("fadein:client:" + slug, JSON.stringify({
           name: clientName.trim(),
           phone: clientPhone.trim(),
           lastBooking: selDate,
+          booking: {
+            id:           created?.id,
+            date:         selDate,
+            time:         selTime,
+            serviceName:  selSvc.name,
+            servicePrice: selSvc.price,
+            barberName:   selBarber.name,
+            barberColor:  selBarber.color,
+            barberAvatar: selBarber.avatar,
+          },
         }));
       } catch (e) { /* ignora quota */ }
 
-      setConfirmed({
+      const newBooking = {
+        id: created?.id,
         date: selDate, time: selTime,
         client: clientName.trim(),
         service: selSvc, barber: selBarber,
-      });
+        status: "pending",
+      };
+      setConfirmed(newBooking);
+      // Ativa a tela de "já tem agendamento" — substitui o fluxo de booking
+      // até a data do corte ou cancelamento
+      setExistingBooking(newBooking);
       setStep("done");
     } catch (e) {
       alert("Não foi possível confirmar o agendamento. Tente novamente.");
@@ -2754,15 +2880,6 @@ function PublicBooking({ slug }) {
       setSubmitting(false);
     }
   }
-
-  if (loading) return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ textAlign: "center" }}>
-        <Logo scale={1.2} />
-        <p style={{ color: C.fgMuted, fontSize: 13, marginTop: 20 }} className="pulse">Carregando agendamento…</p>
-      </div>
-    </div>
-  );
 
   if (errMsg) return (
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
@@ -2773,6 +2890,102 @@ function PublicBooking({ slug }) {
       </div>
     </div>
   );
+
+  if (loading || checkingExisting) return (
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ textAlign: "center" }}>
+        <Logo scale={1.2} />
+        <p style={{ color: C.fgMuted, fontSize: 13, marginTop: 20 }} className="pulse">Carregando agendamento…</p>
+      </div>
+    </div>
+  );
+
+  // ─── Tela "já tem agendamento" ───────────────────────────────────────────
+  // Mostra apenas as informações do agendamento existente. Cliente só pode
+  // fazer um novo após a data do corte (ou se a barbearia cancelar).
+  if (existingBooking) {
+    const justBooked = step === "done"; // acabou de agendar agora
+    return (
+      <div style={{ minHeight: "100vh", background: C.bg, padding: "20px 16px 40px", color: C.fg, fontFamily: "system-ui, -apple-system, sans-serif" }}>
+        <div style={{ maxWidth: 440, margin: "0 auto" }}>
+          <div style={{ textAlign: "center", marginBottom: 22 }}>
+            <Logo scale={1.05} />
+          </div>
+
+          <div style={{ background: C.bgSunken, border: "1px solid " + C.border, borderRadius: 18, overflow: "hidden", boxShadow: "0 8px 28px rgba(0,0,0,0.35)" }}>
+            <div style={{ padding: "18px 20px", background: "linear-gradient(135deg, " + C.card + " 0%, " + C.card2 + " 100%)", borderBottom: "1px solid " + C.border }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: C.fg, fontFamily: "Georgia, serif" }}>{shop.name}</div>
+              {shop.address && <div style={{ fontSize: 12, color: C.fgMuted, marginTop: 4 }}>{shop.address}</div>}
+            </div>
+
+            <div style={{ padding: "28px 22px 24px" }}>
+              <div style={{
+                width: 64, height: 64, borderRadius: "50%",
+                background: C.greenDim, border: "2px solid " + C.green,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 30, color: C.green, margin: "0 auto 18px",
+              }}>✓</div>
+
+              <div style={{ textAlign: "center", marginBottom: 22 }}>
+                <div style={{ fontSize: 19, fontWeight: 700, color: C.fg, marginBottom: 6, fontFamily: "Georgia, serif" }}>
+                  {justBooked ? "Agendamento confirmado!" : "Você já tem um agendamento"}
+                </div>
+                <p style={{ fontSize: 12, color: C.fgMuted, margin: 0, lineHeight: 1.55 }}>
+                  {justBooked
+                    ? "Seu horário foi reservado. Te esperamos!"
+                    : "Aguarde até a data do seu corte para fazer um novo agendamento."}
+                </p>
+              </div>
+
+              {/* Card com os detalhes */}
+              <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid " + C.border }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: "50%",
+                    background: existingBooking.barber.color + "30", color: existingBooking.barber.color,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 17, fontWeight: 700, flexShrink: 0,
+                  }}>{existingBooking.barber.avatar}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: C.fg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{existingBooking.client}</div>
+                    <div style={{ fontSize: 12, color: C.fgMuted }}>{existingBooking.barber.name}</div>
+                  </div>
+                  <StatusPill status={existingBooking.status} />
+                </div>
+
+                {[
+                  ["Serviço", existingBooking.service.name + (existingBooking.service.price ? " · " + fmtMoney(existingBooking.service.price) : "")],
+                  ["Data",    fmtFull(existingBooking.date)],
+                  ["Horário", existingBooking.time],
+                ].map(([l, v], i, arr) => (
+                  <div key={l} style={{
+                    display: "flex", justifyContent: "space-between", gap: 12,
+                    padding: "8px 0",
+                    borderBottom: i < arr.length - 1 ? "1px solid " + C.border : "none",
+                  }}>
+                    <span style={{ fontSize: 12, color: C.fgMuted, flexShrink: 0 }}>{l}</span>
+                    <span style={{
+                      fontSize: 12, color: l === "Horário" ? C.goldBright : C.fg, fontWeight: 600,
+                      textTransform: l === "Data" ? "capitalize" : "none",
+                      textAlign: "right",
+                    }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+
+              <p style={{ fontSize: 11, color: C.muted, marginTop: 18, lineHeight: 1.55, textAlign: "center" }}>
+                Precisa cancelar ou remarcar?<br />Entre em contato direto com a barbearia.
+              </p>
+            </div>
+          </div>
+
+          <p style={{ textAlign: "center", marginTop: 18, fontSize: 11, color: C.muted }}>
+            Powered by <span style={{ color: C.goldBright, fontWeight: 600 }}>Fadein</span>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const STEPS = ["service","barber","time","confirm"];
   const isReturning = !!clientName && step === "confirm";
@@ -3531,7 +3744,110 @@ function Comissoes({ txns, appts, services, setServices, barbers }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
-function Config({ shop, services, setServices, onLogout, barbers, addBarber, updateBarber, deleteBarber, createService, updateService, deleteService }) {
+// ───────── Card "Horário de funcionamento" (controlado, persiste no Supabase) ─────────
+// Convenção JS p/ dia da semana: 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sáb.
+// Mantemos essa ordem no array workDays pra bater com Date.getDay() na hora de filtrar.
+const DAYS_OF_WEEK = [
+  { idx: 1, label: "Seg" },
+  { idx: 2, label: "Ter" },
+  { idx: 3, label: "Qua" },
+  { idx: 4, label: "Qui" },
+  { idx: 5, label: "Sex" },
+  { idx: 6, label: "Sáb" },
+  { idx: 0, label: "Dom" },
+];
+
+function OperatingHoursCard({ shop, updateShop }) {
+  const [openTime,  setOpenTime]  = useState(shop.openTime  || "08:00");
+  const [closeTime, setCloseTime] = useState(shop.closeTime || "20:00");
+  const [workDays,  setWorkDays]  = useState(
+    Array.isArray(shop.workDays) ? shop.workDays : [1, 2, 3, 4, 5, 6]
+  );
+  const [saving, setSaving] = useState(false);
+  const [savedOk, setSavedOk] = useState(false);
+
+  // Re-sincroniza se o shop carregar depois (ex: hot reload, troca de shop)
+  useEffect(() => {
+    if (shop.openTime)  setOpenTime(shop.openTime);
+    if (shop.closeTime) setCloseTime(shop.closeTime);
+    if (Array.isArray(shop.workDays)) setWorkDays(shop.workDays);
+  }, [shop.openTime, shop.closeTime, shop.workDays]);
+
+  const dirty =
+    openTime  !== (shop.openTime  || "08:00") ||
+    closeTime !== (shop.closeTime || "20:00") ||
+    JSON.stringify([...workDays].sort()) !==
+      JSON.stringify([...(Array.isArray(shop.workDays) ? shop.workDays : [1,2,3,4,5,6])].sort());
+
+  function toggleDay(idx) {
+    setWorkDays(prev =>
+      prev.includes(idx) ? prev.filter(d => d !== idx) : [...prev, idx]
+    );
+    setSavedOk(false);
+  }
+
+  async function save() {
+    if (!updateShop || saving) return;
+    // Validação básica: precisa ter pelo menos 1 dia aberto e fecha > abre
+    if (workDays.length === 0) { alert("Selecione pelo menos 1 dia de funcionamento."); return; }
+    if (closeTime <= openTime) { alert("O horário de fechamento precisa ser depois do de abertura."); return; }
+    setSaving(true);
+    const ok = await updateShop({ openTime, closeTime, workDays });
+    setSaving(false);
+    if (ok) { setSavedOk(true); setTimeout(() => setSavedOk(false), 2400); }
+  }
+
+  return (
+    <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
+      <h3 style={{ fontSize: 14, fontWeight: 600, color: C.fg, margin: "0 0 14px" }}>
+        Horário de funcionamento
+      </h3>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+        <Inp label="Abre"  type="time" value={openTime}  onChange={e => { setOpenTime(e.target.value);  setSavedOk(false); }} />
+        <Inp label="Fecha" type="time" value={closeTime} onChange={e => { setCloseTime(e.target.value); setSavedOk(false); }} />
+      </div>
+      <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+        Dias de funcionamento
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+        {DAYS_OF_WEEK.map(d => {
+          const on = workDays.includes(d.idx);
+          return (
+            <button
+              key={d.idx}
+              type="button"
+              onClick={() => toggleDay(d.idx)}
+              style={{
+                padding: "7px 11px", borderRadius: 7,
+                border: "1px solid " + (on ? C.goldBright : C.border),
+                background: on ? C.goldDim : "transparent",
+                color: on ? C.goldBright : C.fgMuted,
+                fontSize: 12, fontWeight: 600, cursor: "pointer",
+              }}
+              aria-pressed={on}
+            >
+              {d.label}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 11, color: C.fgMuted, marginBottom: 12, lineHeight: 1.5 }}>
+        Dias desmarcados não aparecem no link de agendamento público.
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <Btn sm onClick={save} disabled={!dirty || saving}>
+          {saving ? "Salvando..." : "Salvar horários"}
+        </Btn>
+        {savedOk && (
+          <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>✓ Salvo</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+function Config({ shop, services, setServices, onLogout, barbers, addBarber, updateBarber, deleteBarber, createService, updateService, deleteService, updateShop }) {
   const [saved, setSaved]           = useState(false);
   const [svcModal, setSvcModal]     = useState(false);
   const [editSvc, setEditSvc]       = useState(null);
@@ -3642,24 +3958,7 @@ function Config({ shop, services, setServices, onLogout, barbers, addBarber, upd
           </div>
         </div>
 
-        <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: C.fg, margin: "0 0 14px" }}>Horário de funcionamento</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-            <Inp label="Abre" defaultValue="08:00" type="time" />
-            <Inp label="Fecha" defaultValue="20:00" type="time" />
-          </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"].map((d, i) => (
-              <button key={d} style={{
-                padding: "7px 11px", borderRadius: 7,
-                border: "1px solid " + (i < 6 ? C.goldBright : C.border),
-                background: i < 6 ? C.goldDim : "transparent",
-                color: i < 6 ? C.goldBright : C.fgMuted,
-                fontSize: 12, fontWeight: 600, cursor: "pointer",
-              }}>{d}</button>
-            ))}
-          </div>
-        </div>
+        <OperatingHoursCard shop={shop} updateShop={updateShop} />
 
         <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -4272,6 +4571,11 @@ export default function App() {
           color: "#C9982A",
           plan: data.plan || "starter",
           slug: data.slug || slugify(data.name || ""),
+          // Horário de funcionamento (defaults: 8h-20h, fechado domingo)
+          // work_days segue convenção JS: 0=Dom, 1=Seg, ..., 6=Sáb
+          openTime:  data.open_time  || "08:00",
+          closeTime: data.close_time || "20:00",
+          workDays:  Array.isArray(data.work_days) ? data.work_days : [1, 2, 3, 4, 5, 6],
         });
         console.log("[fadein] shop set:", data.name, "| plan:", data.plan || "starter");
       } else {
@@ -4281,7 +4585,11 @@ export default function App() {
           8000, "insert shops"
         );
         console.log("[fadein] create result:", { created, cErr });
-        if (created) setShop({ id: created.id, name: created.name, address: "", color: "#C9982A", plan: "starter", slug: slugify(created.name || "") });
+        if (created) setShop({
+          id: created.id, name: created.name, address: "", color: "#C9982A",
+          plan: "starter", slug: slugify(created.name || ""),
+          openTime: "08:00", closeTime: "20:00", workDays: [1, 2, 3, 4, 5, 6],
+        });
       }
     } catch (e) {
       console.error("[fadein] loadShop fatal:", e?.message || e);
@@ -4311,9 +4619,15 @@ export default function App() {
         return;
       }
       if (event === "SIGNED_OUT") { setShop(null); setHydrated(false); setRecoveryMode(false); return; }
-      await loadShopForUser(session?.user?.id);
-      setPage("dashboard");
-      setHydrated(false);
+      // IMPORTANTE: só recarrega shop e reseta pra dashboard em SIGNED_IN de verdade.
+      // Eventos TOKEN_REFRESHED / INITIAL_SESSION / USER_UPDATED disparam sozinhos
+      // (renovação de token a cada ~1h, foco na aba, etc) e estavam fazendo o app
+      // voltar pra dashboard sem o usuário pedir.
+      if (event === "SIGNED_IN") {
+        await loadShopForUser(session?.user?.id);
+        setPage("dashboard");
+        setHydrated(false);
+      }
     });
 
     return () => { active = false; sub.subscription.unsubscribe(); };
@@ -4339,6 +4653,56 @@ export default function App() {
     }
   }, [shop?.id, barbers, loadAppts, loadTxns]);
 
+  // ── REALTIME: agendamentos vindos do link público entram na agenda automaticamente ──
+  // Substitui a necessidade de dar F5 — escuta INSERT/UPDATE/DELETE em appointments
+  useEffect(() => {
+    if (!shop?.id) return;
+    const channel = supabase
+      .channel("appts-rt-" + shop.id)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "appointments",
+        filter: "shop_id=eq." + shop.id,
+      }, (payload) => {
+        try {
+          if (payload.eventType === "INSERT" && payload.new) {
+            const newAppt = dbRowToAppt(payload.new, barbers);
+            if (newAppt) {
+              setAppts(prev => prev.some(a => a.id === newAppt.id) ? prev : [...prev, newAppt]);
+            }
+          } else if (payload.eventType === "UPDATE" && payload.new) {
+            const updated = dbRowToAppt(payload.new, barbers);
+            if (updated) {
+              setAppts(prev => prev.map(a => a.id === updated.id ? updated : a));
+            }
+          } else if (payload.eventType === "DELETE" && payload.old) {
+            setAppts(prev => prev.filter(a => a.id !== payload.old.id));
+          }
+        } catch (e) { console.error("[fadein] realtime payload error:", e); }
+      })
+      .subscribe((status) => {
+        console.log("[fadein] realtime channel status:", status);
+      });
+    return () => { supabase.removeChannel(channel); };
+  }, [shop?.id, barbers, dbRowToAppt]);
+
+  // ── Refresh ao voltar pra aba: garante consistência mesmo se o realtime cair ──
+  useEffect(() => {
+    if (!shop?.id) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") {
+        loadAppts(shop.id, barbers);
+      }
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [shop?.id, barbers, loadAppts]);
+
   // Helpers expostos pra Config: criar/editar/excluir barbeiros
   const addBarber = useCallback(async (data) => {
     if (!shop?.id) return;
@@ -4361,6 +4725,24 @@ export default function App() {
     if (error) { console.error("[fadein] deleteBarber:", error); return; }
     if (shop?.id) await loadBarbers(shop.id);
   }, [shop?.id, loadBarbers]);
+
+  // Atualiza dados da loja (horário de funcionamento, etc).
+  // `patch` usa nomes camelCase (openTime, closeTime, workDays) — mapeamos pros
+  // nomes do banco (open_time, close_time, work_days) na hora do update.
+  const updateShop = useCallback(async (patch) => {
+    if (!shop?.id) return;
+    const dbPatch = {};
+    if (patch.openTime  !== undefined) dbPatch.open_time  = patch.openTime;
+    if (patch.closeTime !== undefined) dbPatch.close_time = patch.closeTime;
+    if (patch.workDays  !== undefined) dbPatch.work_days  = patch.workDays;
+    if (patch.name      !== undefined) dbPatch.name       = patch.name;
+    if (patch.address   !== undefined) dbPatch.address    = patch.address;
+    const { error } = await supabase.from("shops").update(dbPatch).eq("id", shop.id);
+    if (error) { console.error("[fadein] updateShop:", error); return false; }
+    // Atualiza estado local imediatamente (UI não precisa esperar reload)
+    setShop(prev => prev ? { ...prev, ...patch } : prev);
+    return true;
+  }, [shop?.id]);
 
   // ── PERSISTÊNCIA local (services, clients, appts, txns vêm do Supabase) ──
   useEffect(() => {
@@ -4510,7 +4892,7 @@ export default function App() {
           : <UpgradeView feature="comissoes" plan={shop.plan} navigate={setPage} />)}
         {page === "clientes"   && <Clientes   clients={clients}   setClients={setClients}   appts={appts} navigate={setPage} barbers={barbers} createClient={createClient} updateClient={updateClient} deleteClient={deleteClient} />}
         {page === "link"       && <LinkAgendamento shop={shop} appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} barbers={barbers} createAppt={createAppt} upsertClientFromAppt={upsertClientFromAppt} />}
-        {page === "config"     && <Config     shop={shop} services={services} setServices={setServices} onLogout={() => supabase.auth.signOut()} barbers={barbers} addBarber={addBarber} updateBarber={updateBarber} deleteBarber={deleteBarber} createService={createService} updateService={updateService} deleteService={deleteService} />}
+        {page === "config"     && <Config     shop={shop} services={services} setServices={setServices} onLogout={() => supabase.auth.signOut()} barbers={barbers} addBarber={addBarber} updateBarber={updateBarber} deleteBarber={deleteBarber} createService={createService} updateService={updateService} deleteService={deleteService} updateShop={updateShop} />}
       </main>
 
       {/* Bottom navigation mobile (5 itens principais) */}

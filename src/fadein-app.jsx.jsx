@@ -2262,14 +2262,27 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients,
   const origin = (typeof window !== "undefined" && window.location.origin) ? window.location.origin : "https://fadein.app";
   const link = origin + "/agendar/" + slug;
 
+  // Dias disponíveis: respeita os dias de funcionamento configurados em Config.
+  // workDays usa convenção JS: 0=Dom, 1=Seg, ..., 6=Sáb.
+  const workDays = Array.isArray(shop.workDays) && shop.workDays.length > 0
+    ? shop.workDays
+    : [1, 2, 3, 4, 5, 6]; // fallback: seg-sáb
+
   const bookDates = useMemo(() => {
     const arr = [];
     for (let i = 0; i <= 30; i++) {
       const ds = toDS(addDays(BASE_DATE, i));
-      if (parseDS(ds).getDay() !== 0) arr.push(ds);
+      if (workDays.includes(parseDS(ds).getDay())) arr.push(ds);
     }
     return arr;
-  }, []);
+  }, [workDays]);
+
+  // Slots de horário: filtra HOURS pelo openTime/closeTime do shop
+  const dayHours = useMemo(() => {
+    const open  = shop.openTime  || "08:00";
+    const close = shop.closeTime || "20:00";
+    return HOURS.filter(h => h >= open && h < close);
+  }, [shop.openTime, shop.closeTime]);
 
   const allSlotsInfo = useMemo(() => {
     if (!selBarber || !selSvc) return [];
@@ -2280,12 +2293,12 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients,
         const s = h * 60 + m;
         return { s, e: s + a.service.duration };
       });
-    return HOURS.map(slot => {
+    return dayHours.map(slot => {
       const [h, m] = slot.split(":").map(Number);
       const s = h * 60 + m, e = s + selSvc.duration;
       return { time: slot, available: !busy.some(b => s < b.e && e > b.s) };
     });
-  }, [selDate, selBarber, selSvc, appts]);
+  }, [selDate, selBarber, selSvc, appts, dayHours]);
 
   function reset() {
     setStep("service"); setSelSvc(null); setSelBarber(null);
@@ -2605,7 +2618,16 @@ function PublicBooking({ slug }) {
         if (cancelled) return;
         if (!shopData) { setErrMsg("Página de agendamento não encontrada."); setLoading(false); return; }
 
-        setShop({ id: shopData.id, name: shopData.name, address: shopData.address || "" });
+        setShop({
+          id: shopData.id,
+          name: shopData.name,
+          address: shopData.address || "",
+          openTime:  shopData.open_time  || "08:00",
+          closeTime: shopData.close_time || "20:00",
+          workDays:  Array.isArray(shopData.work_days) ? shopData.work_days : [1, 2, 3, 4, 5, 6],
+          trialEndsAt:        shopData.trial_ends_at || null,
+          subscriptionStatus: shopData.subscription_status || "trial",
+        });
 
         // 2) Carrega serviços ativos
         const { data: svcs } = await supabase.from("services")
@@ -2660,13 +2682,23 @@ function PublicBooking({ slug }) {
   }, [slug]);
 
   const bookDates = useMemo(() => {
+    const workDays = Array.isArray(shop?.workDays) && shop.workDays.length > 0
+      ? shop.workDays
+      : [1, 2, 3, 4, 5, 6];
     const arr = [];
     for (let i = 0; i <= 30; i++) {
       const ds = toDS(addDays(BASE_DATE, i));
-      if (parseDS(ds).getDay() !== 0) arr.push(ds);
+      if (workDays.includes(parseDS(ds).getDay())) arr.push(ds);
     }
     return arr;
-  }, []);
+  }, [shop?.workDays]);
+
+  // Slots de horário: filtra pelo openTime/closeTime configurado pela barbearia
+  const dayHours = useMemo(() => {
+    const open  = shop?.openTime  || "08:00";
+    const close = shop?.closeTime || "20:00";
+    return HOURS.filter(h => h >= open && h < close);
+  }, [shop?.openTime, shop?.closeTime]);
 
   // Verifica se o cliente já tem agendamento ativo no futuro (impede agendamentos duplos).
   // Roda depois do shop+barbers carregarem; libera novo agendamento só após a data do corte
@@ -2751,12 +2783,12 @@ function PublicBooking({ slug }) {
         const s = h * 60 + m;
         return { s, e: s + (a.service?.duration || 30) };
       });
-    return HOURS.map(slot => {
+    return dayHours.map(slot => {
       const [h, m] = slot.split(":").map(Number);
       const s = h * 60 + m, e = s + selSvc.duration;
       return { time: slot, available: !busy.some(b => s < b.e && e > b.s) };
     });
-  }, [selDate, selBarber, selSvc, appts]);
+  }, [selDate, selBarber, selSvc, appts, dayHours]);
 
   function reset() {
     setStep("service"); setSelSvc(null); setSelBarber(null);
@@ -2869,6 +2901,9 @@ function PublicBooking({ slug }) {
       </div>
     </div>
   );
+
+  // Trial da barbearia expirou (ou cancelaram) — não pode receber novos agendamentos
+  if (isShopBlocked(shop)) return <ShopUnavailable shopName={shop?.name} />;
 
   // ─── Tela "já tem agendamento" ───────────────────────────────────────────
   // Mostra apenas as informações do agendamento existente. Cliente só pode
@@ -3714,7 +3749,456 @@ function Comissoes({ txns, appts, services, setServices, barbers }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
-function Config({ shop, services, setServices, onLogout, barbers, addBarber, updateBarber, deleteBarber, createService, updateService, deleteService }) {
+// ═══════════════════════════════════════════════════════════════════════════
+// PWA INSTALL BANNER
+// ═══════════════════════════════════════════════════════════════════════════
+// Banner discreto que aparece no topo do app convidando o usuário a instalar
+// o PWA. Comportamento por plataforma:
+//
+// - Android Chrome/Edge: usamos o evento `beforeinstallprompt` (que o navegador
+//   dispara quando o site é instalável). Guardamos o evento e disparamos quando
+//   o usuário clica "Instalar". Resultado: prompt nativo do Chrome.
+//
+// - iOS Safari: NÃO existe API de instalação programática. Mostramos um modal
+//   com o passo-a-passo (Compartilhar → "Adicionar à Tela de Início").
+//
+// O banner some quando: o usuário fecha (lembramos via localStorage por 7 dias),
+// o app já está instalado (rodando em modo standalone), ou o usuário instala.
+
+function isStandalone() {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    window.navigator?.standalone === true // iOS Safari legacy
+  );
+}
+
+function isIOS() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+}
+
+const INSTALL_DISMISS_KEY = "fadein:install-dismissed-at";
+const DISMISS_DAYS = 7;
+
+function InstallBanner() {
+  const [deferred, setDeferred]   = useState(null); // evento beforeinstallprompt salvo
+  const [showIOS, setShowIOS]     = useState(false); // modal de instruções iOS
+  const [visible, setVisible]     = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (isStandalone()) return; // já instalado
+
+    // Já dispensou recentemente?
+    try {
+      const dismissedAt = localStorage.getItem(INSTALL_DISMISS_KEY);
+      if (dismissedAt) {
+        const ageDays = (Date.now() - parseInt(dismissedAt, 10)) / (1000 * 60 * 60 * 24);
+        if (ageDays < DISMISS_DAYS) return;
+      }
+    } catch (e) { /* ignora */ }
+
+    // Android: aguarda evento beforeinstallprompt
+    const handler = (e) => {
+      e.preventDefault();
+      setDeferred(e);
+      setVisible(true);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+
+    // iOS: não dispara o evento, mas é instalável via Safari → mostramos banner manual
+    if (isIOS()) {
+      // pequeno delay pra não competir com o login/loading inicial
+      const t = setTimeout(() => setVisible(true), 2500);
+      return () => { clearTimeout(t); window.removeEventListener("beforeinstallprompt", handler); };
+    }
+
+    // Quando instala, esconde o banner
+    const onInstalled = () => { setVisible(false); setDeferred(null); };
+    window.addEventListener("appinstalled", onInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  function dismiss() {
+    setVisible(false);
+    setShowIOS(false);
+    try { localStorage.setItem(INSTALL_DISMISS_KEY, String(Date.now())); } catch (e) {}
+  }
+
+  async function install() {
+    if (isIOS()) {
+      setShowIOS(true);
+      return;
+    }
+    if (!deferred) return;
+    deferred.prompt();
+    const { outcome } = await deferred.userChoice;
+    setDeferred(null);
+    if (outcome === "accepted") setVisible(false);
+    else dismiss(); // tratou o "agora não" como dismissal
+  }
+
+  if (!visible) return null;
+
+  return (
+    <>
+      <div style={{
+        background: C.goldDim, border: "1px solid " + C.goldBright + "30", borderRadius: 10,
+        padding: "10px 14px", marginBottom: 12,
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        gap: 10, flexWrap: "wrap",
+      }}>
+        <div style={{ fontSize: 12.5, color: C.fg, fontWeight: 500, lineHeight: 1.4, flex: 1, minWidth: 200 }}>
+          📱 <b>Instale o Fadein no seu celular</b>
+          <span style={{ color: C.fgMuted, fontWeight: 400, marginLeft: 6 }}>
+            Acesso rápido, abre como app, funciona offline.
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={install} style={{
+            background: C.goldBright, color: "#1A1A1A", border: "none",
+            padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>
+            Instalar
+          </button>
+          <button onClick={dismiss} title="Dispensar" style={{
+            background: "transparent", color: C.fgMuted, border: "1px solid " + C.border,
+            padding: "6px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>
+            Agora não
+          </button>
+        </div>
+      </div>
+
+      {/* Modal iOS: instruções passo-a-passo */}
+      {showIOS && (
+        <div className="modal-overlay" onClick={dismiss} style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 20, zIndex: 200,
+        }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{
+            background: C.card, border: "1px solid " + C.border, borderRadius: 14,
+            padding: 24, maxWidth: 380, width: "100%",
+          }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 14px", color: C.fg, fontFamily: "Georgia, serif" }}>
+              Instalar no iPhone
+            </h3>
+            <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, color: C.fg, lineHeight: 1.85 }}>
+              <li>Toque em <b>Compartilhar</b> <span style={{ color: C.fgMuted }}>(ícone de quadrado com seta)</span> na barra inferior do Safari</li>
+              <li>Role e toque em <b>Adicionar à Tela de Início</b></li>
+              <li>Toque em <b>Adicionar</b> no canto superior direito</li>
+            </ol>
+            <p style={{ fontSize: 12, color: C.fgMuted, margin: "16px 0 18px", lineHeight: 1.5 }}>
+              Pronto — o Fadein vai aparecer como um app na sua tela inicial.
+            </p>
+            <button onClick={dismiss} style={{
+              width: "100%", background: C.goldBright, color: "#1A1A1A", border: "none",
+              padding: "11px 18px", borderRadius: 9, fontSize: 13, fontWeight: 700,
+              cursor: "pointer", fontFamily: "inherit",
+            }}>
+              Entendi
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+
+// Calcula quantos dias inteiros faltam até a data dada. Retorna 0 se já passou.
+function daysUntil(dateStr) {
+  if (!dateStr) return 0;
+  const ms = new Date(dateStr).getTime() - Date.now();
+  if (isNaN(ms) || ms <= 0) return 0;
+  return Math.ceil(ms / (1000 * 60 * 60 * 24));
+}
+
+// Determina se o shop está bloqueado (trial expirou e não virou pagante).
+// Usado pra: travar o app inteiro e exibir tela de upgrade; e
+// bloquear a página pública de agendamento (cliente final não consegue marcar).
+function isShopBlocked(shop) {
+  if (!shop) return false;
+  const status = shop.subscriptionStatus || "trial";
+  if (status === "active") return false;            // pagante
+  if (status === "expired" || status === "cancelled") return true;
+  if (status === "trial") return daysUntil(shop.trialEndsAt) === 0;
+  return false;
+}
+
+// Banner que aparece no topo do app quando faltam ≤ 7 dias de trial.
+// Não bloqueia nada — só lembra com tom amigável crescente conforme se aproxima do fim.
+function TrialBanner({ shop }) {
+  if (!shop || shop.subscriptionStatus !== "trial") return null;
+  const days = daysUntil(shop.trialEndsAt);
+  if (days > 7) return null;
+
+  const urgent = days <= 2;
+  const bg     = urgent ? C.redDim   : C.amberDim;
+  const fg     = urgent ? C.red      : C.amber;
+  const border = urgent ? C.red+"40" : C.amber+"40";
+
+  const label = days === 0 ? "Seu trial termina hoje"
+              : days === 1 ? "Seu trial termina amanhã"
+              : "Faltam " + days + " dias do seu trial";
+
+  function openWhats() {
+    const msg = encodeURIComponent("Olá! Quero assinar o Fadein.");
+    window.open("https://wa.me/?text=" + msg, "_blank");
+  }
+
+  return (
+    <div style={{
+      background: bg, border: "1px solid " + border, borderRadius: 10,
+      padding: "10px 14px", marginBottom: 16,
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      gap: 12, flexWrap: "wrap",
+    }}>
+      <div style={{ fontSize: 13, color: fg, fontWeight: 600, lineHeight: 1.4 }}>
+        ⚠ {label}.{" "}
+        <span style={{ fontWeight: 500, color: fg, opacity: 0.85 }}>
+          Assine pra continuar usando sem interrupção.
+        </span>
+      </div>
+      <button onClick={openWhats} style={{
+        background: fg, color: "#1A1A1A", border: "none",
+        padding: "7px 14px", borderRadius: 7, fontSize: 12, fontWeight: 700,
+        cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+      }}>
+        Assinar agora
+      </button>
+    </div>
+  );
+}
+
+// Tela cheia que substitui o app quando trial expirou (ou assinatura cancelada).
+// Único caminho daqui é assinar (CTA WhatsApp por enquanto — quando integrar
+// Mercado Pago, troca pro fluxo de checkout).
+function TrialExpired({ shop, onLogout }) {
+  function openWhats() {
+    const msg = encodeURIComponent("Olá! Meu trial do Fadein acabou e quero assinar.");
+    window.open("https://wa.me/?text=" + msg, "_blank");
+  }
+
+  const isExpired   = shop?.subscriptionStatus === "expired" || daysUntil(shop?.trialEndsAt) === 0;
+  const isCancelled = shop?.subscriptionStatus === "cancelled";
+
+  const title = isCancelled ? "Assinatura cancelada" : "Seu trial acabou";
+  const sub   = isCancelled
+    ? "Pra voltar a usar o Fadein, reative sua assinatura."
+    : "Esperamos que você tenha curtido esses 15 dias. Pra continuar com agenda, link de agendamento e tudo mais funcionando, é hora de assinar.";
+
+  return (
+    <div style={{
+      minHeight: "100vh", background: C.bg, color: C.fg,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "24px 20px", fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+    }}>
+      <div style={{
+        maxWidth: 440, width: "100%",
+        background: C.card, border: "1px solid " + C.border, borderRadius: 14,
+        padding: "32px 28px", textAlign: "center",
+      }}>
+        <div style={{ marginBottom: 22, display: "flex", justifyContent: "center" }}>
+          <Logo scale={1.2} />
+        </div>
+
+        <div style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 56, height: 56, borderRadius: "50%",
+          background: C.amberDim, marginBottom: 18, fontSize: 26,
+        }}>
+          {isCancelled ? "👋" : "⏰"}
+        </div>
+
+        <h1 style={{
+          fontSize: 22, fontWeight: 700, margin: "0 0 10px",
+          color: C.fg, fontFamily: "Georgia, serif",
+        }}>
+          {title}
+        </h1>
+        <p style={{ fontSize: 13.5, color: C.fgMuted, margin: "0 0 24px", lineHeight: 1.55 }}>
+          {sub}
+        </p>
+
+        <div style={{
+          background: C.bgSunken, border: "1px solid " + C.border, borderRadius: 10,
+          padding: "14px 16px", marginBottom: 20, textAlign: "left",
+        }}>
+          <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+            O que você mantém ao assinar
+          </div>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", fontSize: 13, color: C.fg, lineHeight: 1.9 }}>
+            <li>✓ Sua agenda e histórico de clientes</li>
+            <li>✓ Seu link público de agendamento</li>
+            <li>✓ Comissões e financeiro</li>
+            <li>✓ Lembretes via WhatsApp (no Premium)</li>
+          </ul>
+        </div>
+
+        <button onClick={openWhats} style={{
+          width: "100%", background: C.goldBright, color: "#1A1A1A", border: "none",
+          padding: "13px 20px", borderRadius: 10, fontSize: 14, fontWeight: 700,
+          cursor: "pointer", fontFamily: "inherit", marginBottom: 10,
+        }}>
+          Assinar agora
+        </button>
+
+        <button onClick={onLogout} style={{
+          background: "transparent", color: C.fgMuted, border: "none",
+          padding: "9px 14px", fontSize: 12, fontWeight: 500,
+          cursor: "pointer", fontFamily: "inherit",
+        }}>
+          Sair da conta
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Mensagem que substitui a página pública de agendamento se a barbearia
+// está com trial expirado. Cliente final vê algo amigável em vez de UI quebrada.
+function ShopUnavailable({ shopName }) {
+  return (
+    <div style={{
+      minHeight: "100vh", background: C.bg, color: C.fg,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "24px 20px", fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+    }}>
+      <div style={{ maxWidth: 380, textAlign: "center" }}>
+        <div style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 56, height: 56, borderRadius: "50%",
+          background: C.bgSunken, border: "1px solid " + C.border,
+          marginBottom: 18, fontSize: 24,
+        }}>
+          🚪
+        </div>
+        <h1 style={{ fontSize: 19, fontWeight: 700, margin: "0 0 10px", color: C.fg, fontFamily: "Georgia, serif" }}>
+          Agendamento indisponível
+        </h1>
+        <p style={{ fontSize: 13, color: C.fgMuted, margin: 0, lineHeight: 1.6 }}>
+          {shopName ? <><b>{shopName}</b> não está</> : "Esta barbearia não está"}{" "}
+          recebendo agendamentos online no momento. Entre em contato direto pra marcar seu horário.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
+// Convenção JS p/ dia da semana: 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sáb.
+// Mantemos essa ordem no array workDays pra bater com Date.getDay() na hora de filtrar.
+const DAYS_OF_WEEK = [
+  { idx: 1, label: "Seg" },
+  { idx: 2, label: "Ter" },
+  { idx: 3, label: "Qua" },
+  { idx: 4, label: "Qui" },
+  { idx: 5, label: "Sex" },
+  { idx: 6, label: "Sáb" },
+  { idx: 0, label: "Dom" },
+];
+
+function OperatingHoursCard({ shop, updateShop }) {
+  const [openTime,  setOpenTime]  = useState(shop.openTime  || "08:00");
+  const [closeTime, setCloseTime] = useState(shop.closeTime || "20:00");
+  const [workDays,  setWorkDays]  = useState(
+    Array.isArray(shop.workDays) ? shop.workDays : [1, 2, 3, 4, 5, 6]
+  );
+  const [saving, setSaving] = useState(false);
+  const [savedOk, setSavedOk] = useState(false);
+
+  // Re-sincroniza se o shop carregar depois (ex: hot reload, troca de shop)
+  useEffect(() => {
+    if (shop.openTime)  setOpenTime(shop.openTime);
+    if (shop.closeTime) setCloseTime(shop.closeTime);
+    if (Array.isArray(shop.workDays)) setWorkDays(shop.workDays);
+  }, [shop.openTime, shop.closeTime, shop.workDays]);
+
+  const dirty =
+    openTime  !== (shop.openTime  || "08:00") ||
+    closeTime !== (shop.closeTime || "20:00") ||
+    JSON.stringify([...workDays].sort()) !==
+      JSON.stringify([...(Array.isArray(shop.workDays) ? shop.workDays : [1,2,3,4,5,6])].sort());
+
+  function toggleDay(idx) {
+    setWorkDays(prev =>
+      prev.includes(idx) ? prev.filter(d => d !== idx) : [...prev, idx]
+    );
+    setSavedOk(false);
+  }
+
+  async function save() {
+    if (!updateShop || saving) return;
+    // Validação básica: precisa ter pelo menos 1 dia aberto e fecha > abre
+    if (workDays.length === 0) { alert("Selecione pelo menos 1 dia de funcionamento."); return; }
+    if (closeTime <= openTime) { alert("O horário de fechamento precisa ser depois do de abertura."); return; }
+    setSaving(true);
+    const ok = await updateShop({ openTime, closeTime, workDays });
+    setSaving(false);
+    if (ok) { setSavedOk(true); setTimeout(() => setSavedOk(false), 2400); }
+  }
+
+  return (
+    <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
+      <h3 style={{ fontSize: 14, fontWeight: 600, color: C.fg, margin: "0 0 14px" }}>
+        Horário de funcionamento
+      </h3>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+        <Inp label="Abre"  type="time" value={openTime}  onChange={e => { setOpenTime(e.target.value);  setSavedOk(false); }} />
+        <Inp label="Fecha" type="time" value={closeTime} onChange={e => { setCloseTime(e.target.value); setSavedOk(false); }} />
+      </div>
+      <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+        Dias de funcionamento
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+        {DAYS_OF_WEEK.map(d => {
+          const on = workDays.includes(d.idx);
+          return (
+            <button
+              key={d.idx}
+              type="button"
+              onClick={() => toggleDay(d.idx)}
+              style={{
+                padding: "7px 11px", borderRadius: 7,
+                border: "1px solid " + (on ? C.goldBright : C.border),
+                background: on ? C.goldDim : "transparent",
+                color: on ? C.goldBright : C.fgMuted,
+                fontSize: 12, fontWeight: 600, cursor: "pointer",
+              }}
+              aria-pressed={on}
+            >
+              {d.label}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 11, color: C.fgMuted, marginBottom: 12, lineHeight: 1.5 }}>
+        Dias desmarcados não aparecem no link de agendamento público.
+      </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <Btn sm onClick={save} disabled={!dirty || saving}>
+          {saving ? "Salvando..." : "Salvar horários"}
+        </Btn>
+        {savedOk && (
+          <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>✓ Salvo</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+function Config({ shop, services, setServices, onLogout, barbers, addBarber, updateBarber, deleteBarber, createService, updateService, deleteService, updateShop }) {
   const [saved, setSaved]           = useState(false);
   const [svcModal, setSvcModal]     = useState(false);
   const [editSvc, setEditSvc]       = useState(null);
@@ -3813,6 +4297,33 @@ function Config({ shop, services, setServices, onLogout, barbers, addBarber, upd
               </Btn>
             )}
           </div>
+
+          {/* Status do trial / assinatura — barra dentro do card */}
+          {shop.subscriptionStatus === "trial" && (() => {
+            const days = daysUntil(shop.trialEndsAt);
+            const urgent = days <= 7;
+            return (
+              <div style={{
+                marginTop: 16, paddingTop: 14, borderTop: "1px solid " + C.border,
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+              }}>
+                <div style={{ fontSize: 12, color: urgent ? C.amber : C.fgMuted, lineHeight: 1.5 }}>
+                  <b>Período de teste:</b>{" "}
+                  {days === 0 ? "termina hoje"
+                    : days === 1 ? "termina amanhã"
+                    : days + " dias restantes"}
+                </div>
+              </div>
+            );
+          })()}
+          {shop.subscriptionStatus === "active" && (
+            <div style={{
+              marginTop: 16, paddingTop: 14, borderTop: "1px solid " + C.border,
+              fontSize: 12, color: C.green,
+            }}>
+              ✓ Assinatura ativa
+            </div>
+          )}
         </div>
 
         <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
@@ -3825,24 +4336,7 @@ function Config({ shop, services, setServices, onLogout, barbers, addBarber, upd
           </div>
         </div>
 
-        <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: C.fg, margin: "0 0 14px" }}>Horário de funcionamento</h3>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-            <Inp label="Abre" defaultValue="08:00" type="time" />
-            <Inp label="Fecha" defaultValue="20:00" type="time" />
-          </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"].map((d, i) => (
-              <button key={d} style={{
-                padding: "7px 11px", borderRadius: 7,
-                border: "1px solid " + (i < 6 ? C.goldBright : C.border),
-                background: i < 6 ? C.goldDim : "transparent",
-                color: i < 6 ? C.goldBright : C.fgMuted,
-                fontSize: 12, fontWeight: 600, cursor: "pointer",
-              }}>{d}</button>
-            ))}
-          </div>
-        </div>
+        <OperatingHoursCard shop={shop} updateShop={updateShop} />
 
         <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -4455,6 +4949,14 @@ export default function App() {
           color: "#C9982A",
           plan: data.plan || "starter",
           slug: data.slug || slugify(data.name || ""),
+          // Horário de funcionamento (defaults: 8h-20h, fechado domingo)
+          // work_days segue convenção JS: 0=Dom, 1=Seg, ..., 6=Sáb
+          openTime:  data.open_time  || "08:00",
+          closeTime: data.close_time || "20:00",
+          workDays:  Array.isArray(data.work_days) ? data.work_days : [1, 2, 3, 4, 5, 6],
+          // Trial / assinatura
+          trialEndsAt:        data.trial_ends_at || null,
+          subscriptionStatus: data.subscription_status || "trial",
         });
         console.log("[fadein] shop set:", data.name, "| plan:", data.plan || "starter");
       } else {
@@ -4464,7 +4966,13 @@ export default function App() {
           8000, "insert shops"
         );
         console.log("[fadein] create result:", { created, cErr });
-        if (created) setShop({ id: created.id, name: created.name, address: "", color: "#C9982A", plan: "starter", slug: slugify(created.name || "") });
+        if (created) setShop({
+          id: created.id, name: created.name, address: "", color: "#C9982A",
+          plan: "starter", slug: slugify(created.name || ""),
+          openTime: "08:00", closeTime: "20:00", workDays: [1, 2, 3, 4, 5, 6],
+          trialEndsAt: created.trial_ends_at || null,
+          subscriptionStatus: created.subscription_status || "trial",
+        });
       }
     } catch (e) {
       console.error("[fadein] loadShop fatal:", e?.message || e);
@@ -4494,9 +5002,15 @@ export default function App() {
         return;
       }
       if (event === "SIGNED_OUT") { setShop(null); setHydrated(false); setRecoveryMode(false); return; }
-      await loadShopForUser(session?.user?.id);
-      setPage("dashboard");
-      setHydrated(false);
+      // IMPORTANTE: só recarrega shop e reseta pra dashboard em SIGNED_IN de verdade.
+      // Eventos TOKEN_REFRESHED / INITIAL_SESSION / USER_UPDATED disparam sozinhos
+      // (renovação de token a cada ~1h, foco na aba, etc) e estavam fazendo o app
+      // voltar pra dashboard sem o usuário pedir.
+      if (event === "SIGNED_IN") {
+        await loadShopForUser(session?.user?.id);
+        setPage("dashboard");
+        setHydrated(false);
+      }
     });
 
     return () => { active = false; sub.subscription.unsubscribe(); };
@@ -4595,6 +5109,24 @@ export default function App() {
     if (shop?.id) await loadBarbers(shop.id);
   }, [shop?.id, loadBarbers]);
 
+  // Atualiza dados da loja (horário de funcionamento, etc).
+  // `patch` usa nomes camelCase (openTime, closeTime, workDays) — mapeamos pros
+  // nomes do banco (open_time, close_time, work_days) na hora do update.
+  const updateShop = useCallback(async (patch) => {
+    if (!shop?.id) return;
+    const dbPatch = {};
+    if (patch.openTime  !== undefined) dbPatch.open_time  = patch.openTime;
+    if (patch.closeTime !== undefined) dbPatch.close_time = patch.closeTime;
+    if (patch.workDays  !== undefined) dbPatch.work_days  = patch.workDays;
+    if (patch.name      !== undefined) dbPatch.name       = patch.name;
+    if (patch.address   !== undefined) dbPatch.address    = patch.address;
+    const { error } = await supabase.from("shops").update(dbPatch).eq("id", shop.id);
+    if (error) { console.error("[fadein] updateShop:", error); return false; }
+    // Atualiza estado local imediatamente (UI não precisa esperar reload)
+    setShop(prev => prev ? { ...prev, ...patch } : prev);
+    return true;
+  }, [shop?.id]);
+
   // ── PERSISTÊNCIA local (services, clients, appts, txns vêm do Supabase) ──
   useEffect(() => {
     if (!shop || hydrated) return;
@@ -4625,6 +5157,14 @@ export default function App() {
     <>
       <style>{GLOBAL_CSS}</style>
       <Login onLogin={() => {}} />
+    </>
+  );
+
+  // Trial venceu (ou assinatura cancelada): toma a tela inteira, sem acesso ao app.
+  if (isShopBlocked(shop)) return (
+    <>
+      <style>{GLOBAL_CSS}</style>
+      <TrialExpired shop={shop} onLogout={() => supabase.auth.signOut()} />
     </>
   );
 
@@ -4733,6 +5273,8 @@ export default function App() {
       </div>
 
       <main className="app-main">
+        <InstallBanner />
+        <TrialBanner shop={shop} />
         {page === "dashboard"  && <Dashboard  appts={appts} txns={txns} services={services} navigate={setPage} />}
         {page === "agenda"     && <Agenda     appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} setTxns={setTxns} barbers={barbers} createAppt={createAppt} updateAppt={updateAppt} cancelAppt={cancelAppt} upsertClientFromAppt={upsertClientFromAppt} createTxn={createTxn} />}
         {page === "financeiro" && (hasFeature(shop.plan, "financeiro")
@@ -4743,7 +5285,7 @@ export default function App() {
           : <UpgradeView feature="comissoes" plan={shop.plan} navigate={setPage} />)}
         {page === "clientes"   && <Clientes   clients={clients}   setClients={setClients}   appts={appts} navigate={setPage} barbers={barbers} createClient={createClient} updateClient={updateClient} deleteClient={deleteClient} />}
         {page === "link"       && <LinkAgendamento shop={shop} appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} barbers={barbers} createAppt={createAppt} upsertClientFromAppt={upsertClientFromAppt} />}
-        {page === "config"     && <Config     shop={shop} services={services} setServices={setServices} onLogout={() => supabase.auth.signOut()} barbers={barbers} addBarber={addBarber} updateBarber={updateBarber} deleteBarber={deleteBarber} createService={createService} updateService={updateService} deleteService={deleteService} />}
+        {page === "config"     && <Config     shop={shop} services={services} setServices={setServices} onLogout={() => supabase.auth.signOut()} barbers={barbers} addBarber={addBarber} updateBarber={updateBarber} deleteBarber={deleteBarber} createService={createService} updateService={updateService} deleteService={deleteService} updateShop={updateShop} />}
       </main>
 
       {/* Bottom navigation mobile (5 itens principais) */}

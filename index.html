@@ -1,27 +1,42 @@
 <!doctype html>
 <html lang="pt-BR">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#1A1A1A" />
-    <meta name="description" content="Fadein — Sistema de gestão para barbearias" />
 
-    <!-- PWA / iOS -->
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Fadein" />
-    <meta name="mobile-web-app-capable" content="yes" />
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
 
-    <title>Fadein</title>
-    <style>
-      html, body, #root { margin: 0; padding: 0; height: 100%; background: #1A1A1A; }
-      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    </style>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+  <!-- Viewport (você já tem essa, mas confira) -->
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+  <!-- Tema do sistema (Android usa pra colorir a barra de status) -->
+  <meta name="theme-color" content="#1A1A1A" />
+
+  <!-- ────────── PWA / iOS Safari ────────── -->
+  <!-- Permite "Adicionar à Tela de Início" criar um app standalone -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+
+  <!-- Cor da barra de status no iOS quando instalado como app -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+  <!-- Nome que aparece embaixo do ícone no iOS -->
+  <meta name="apple-mobile-web-app-title" content="Fadein" />
+
+  <!-- Ícone que o iOS usa quando instalado como app -->
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+  <!-- Splash screen do iOS é gerada automaticamente a partir destas cores -->
+
+  <meta name="description"
+    content="Fadein — Sistema de gestão para barbearias. Agenda, link de agendamento, comissões e financeiro." />
+
+  <title>Fadein</title>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+
 </html>
