@@ -68,6 +68,91 @@ const GLOBAL_CSS = `
   .slide-in { animation: slideIn 0.25s ease-out; }
   .pulse { animation: pulse 2s ease-in-out infinite; }
 
+  /* ────────────────────── LOADING SCREEN ────────────────────── */
+  /* Identidade Fadein viva. Animação staircase: cada barrinha sobe na sua vez
+     (degrau 1 → degrau 2 → ... → degrau 5), fica em pé, e desaparece na mesma
+     ordem antes do ciclo recomeçar. Mais minimal e premium que um wave clássico.
+     Ciclo total de 4.4s, easing expo-out na subida pra dar peso refinado. */
+  .loading-screen {
+    min-height: 100vh;
+    background:
+      radial-gradient(ellipse 65% 55% at 50% 38%, ${C.goldFaint} 0%, transparent 70%),
+      ${C.bg};
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 26px; padding: 24px;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  .loading-bars {
+    display: flex; align-items: flex-end; gap: 6px;
+    height: 60px;
+  }
+  .loading-bars span {
+    display: block; width: 7px; height: 0;
+    background: linear-gradient(180deg, #F0C76A 0%, ${C.gold} 100%);
+    border-radius: 2px;
+    opacity: 0;
+    transform-origin: bottom;
+    animation: barStaircase 4.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  }
+  /* Cada barra reproduz a curva crescente do logo (alturas 22, 30, 38, 48, 60).
+     O delay incremental cria o efeito de "degrau subindo um após o outro". */
+  .loading-bars span:nth-child(1) { animation-delay: 0.0s;  --peak: 22px; }
+  .loading-bars span:nth-child(2) { animation-delay: 0.18s; --peak: 30px; }
+  .loading-bars span:nth-child(3) { animation-delay: 0.36s; --peak: 38px; }
+  .loading-bars span:nth-child(4) { animation-delay: 0.54s; --peak: 48px; }
+  .loading-bars span:nth-child(5) { animation-delay: 0.72s; --peak: 60px; }
+  @keyframes barStaircase {
+    /* invisível esperando a vez */
+    0%   { height: 0;            opacity: 0; }
+    /* sobe (4% do ciclo = ~180ms) */
+    4%   { height: var(--peak);  opacity: 1; }
+    /* fica em pé enquanto as outras sobem e o logo é "construído" */
+    65%  { height: var(--peak);  opacity: 1; }
+    /* fade-out elegante mantendo a altura — não despenca, dissolve */
+    78%  { height: var(--peak);  opacity: 0; }
+    /* repouso até o próximo ciclo começar */
+    100% { height: 0;            opacity: 0; }
+  }
+
+  .loading-brand {
+    font-size: 22px; font-weight: 600; letter-spacing: 6px;
+    color: ${C.fg};
+    animation: loadingFadeUp 0.9s cubic-bezier(0.16, 1, 0.3, 1) 1.1s both;
+  }
+  .loading-brand b {
+    color: ${C.goldBright}; font-weight: 600;
+    margin-left: 5px;
+  }
+  @keyframes loadingFadeUp {
+    from { opacity: 0; transform: translateY(6px); letter-spacing: 3px; }
+    to   { opacity: 1; transform: translateY(0);   letter-spacing: 6px; }
+  }
+
+  /* Linha-base sutil sob o logo (separador horizontal premium) */
+  .loading-rule {
+    width: 80px; height: 1px;
+    background: linear-gradient(90deg, transparent, ${C.borderHi}, transparent);
+    animation: loadingFadeUp 0.9s ease-out 1.3s both;
+  }
+
+  .loading-message {
+    font-size: 9px; font-weight: 500;
+    color: ${C.muted};
+    letter-spacing: 4px; text-transform: uppercase;
+    margin: 0;
+    animation: loadingFadeUp 0.9s ease-out 1.5s both;
+  }
+
+  /* Respeita "reduce motion": mostra logo final estático, sem ciclo. */
+  @media (prefers-reduced-motion: reduce) {
+    .loading-bars span {
+      animation: none;
+      height: var(--peak, 50px);
+      opacity: 1;
+    }
+  }
+
   /* Inputs sem highlight default azul */
   input:focus, select:focus, textarea:focus { outline: none; border-color: ${C.goldBright} !important; }
 
@@ -85,14 +170,14 @@ const GLOBAL_CSS = `
   button:active:not(:disabled) { transform: scale(0.98); }
 
   /* ────────────────────── DASHBOARD CHART RESIZING ────────────────────── */
-  /* Ocupa toda a largura do container, sem cap horizontal — preenche o espaço do app */
+  /* Ocupa toda a largura do container. Altura vem naturalmente do viewBox
+     (responsivo: mais panorâmico em desktop, mais quadrado em mobile). */
   .dashboard-chart-wrap { display: block; width: 100%; }
-  .dashboard-chart-wrap svg { width: 100%; display: block; }
-  @media (min-width: 769px) {
-    .dashboard-chart-wrap svg { min-height: 380px; max-height: 520px; }
-  }
+  .dashboard-chart-wrap svg { width: 100%; display: block; height: auto; }
+
+  /* Sparkline do hero: maior em mobile pra dar mais leitura */
   @media (max-width: 768px) {
-    .dashboard-chart-wrap svg { min-height: 240px; max-height: 320px; }
+    .hero-sparkline { height: 64px !important; }
   }
 
   /* ────────────────────── MOBILE RESPONSIVO ────────────────────── */
@@ -177,6 +262,44 @@ const GLOBAL_CSS = `
     .grid-responsive { grid-template-columns: 1fr !important; }
     .grid-responsive-2 { grid-template-columns: repeat(2, 1fr) !important; }
 
+    /* Mini-KPIs do dashboard: 3 colunas compactas no mobile pra economizar altura
+       e deixar os gráficos mais visíveis */
+    .mini-kpis-stack {
+      grid-template-columns: repeat(3, 1fr) !important;
+      grid-template-rows: auto !important;
+      gap: 6px !important;
+    }
+    .mini-kpis-stack > div {
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      padding: 10px 12px !important;
+      gap: 6px !important;
+    }
+    .mini-kpis-stack > div > div:first-child {
+      width: 28px !important; height: 28px !important;
+    }
+    .mini-kpis-stack .mini-kpi-value {
+      font-size: 15px !important;
+    }
+    .mini-kpis-stack .mini-kpi-sub { display: none; } /* economiza altura */
+
+    /* Linha de horário por dia no mobile: nome em cima, horários embaixo lado a lado */
+    .day-hours-row {
+      grid-template-columns: 1fr 1fr !important;
+      grid-template-rows: auto auto !important;
+      row-gap: 8px !important;
+    }
+    .day-hours-row > button:first-child {
+      grid-column: 1 / -1 !important;
+    }
+
+    /* Hero do dashboard: faturamento gigante reduz no mobile pra não estourar */
+    .hero-revenue { font-size: 30px !important; }
+    .hero-card { padding: 18px 18px !important; }
+
+    /* Filtros do gráfico: pílulas um pouco maiores pra dedo */
+    .chart-range-tabs button { padding: 7px 13px !important; font-size: 12px !important; }
+
     /* Tabelas com scroll horizontal */
     .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   }
@@ -210,43 +333,14 @@ function agoLabel(ds) {
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════
-const SHOPS = [
-  { id: 1, name: "Barbearia do João",  address: "Rua das Flores, 123 — Viamão/RS",   password: "12457",        color: "#C9982A" },
-  { id: 2, name: "BarberShop Elite",   address: "Av. Borges de Medeiros, 800 — POA", password: "barbershop64", color: "#5A9BE2" },
-  { id: 3, name: "Corte & Estilo",     address: "Rua Independência, 44 — Canoas",    password: "corte2026",    color: "#5BAF6F" },
-];
-
-const BARBERS = [
-  { id: 1, name: "Carlos", avatar: "C", color: "#E0B445", commission: 50 }, // 50% pra ele, 50% pra casa
-  { id: 2, name: "Rafael", avatar: "R", color: "#5A9BE2", commission: 45 },
-  { id: 3, name: "Diego",  avatar: "D", color: "#5BAF6F", commission: 40 },
-];
-
-const SERVICES_INIT = [
-  { id: 1, name: "Corte",         price: 45, duration: 30 },
-  { id: 2, name: "Barba",         price: 30, duration: 20 },
-  { id: 3, name: "Corte + Barba", price: 65, duration: 45 },
-  { id: 4, name: "Degradê",       price: 50, duration: 35 },
-  { id: 5, name: "Sobrancelha",   price: 15, duration: 10 },
-  { id: 6, name: "Pigmentação",   price: 80, duration: 40 },
-];
-
+// Slots de horário possíveis no app — 8h às 20h em intervalos de 30min.
+// O horário REAL de funcionamento de cada barbearia é configurado em Settings
+// (campos open_time / close_time / day_hours) e filtra esse array via getDayHourSlots().
 const HOURS = [];
 for (let h = 8; h < 20; h++) {
   HOURS.push(pad(h) + ":00");
   HOURS.push(pad(h) + ":30");
 }
-
-const CLIENTS_INIT = [
-  { id: 1, name: "João Silva",     phone: "(51) 99123-4567", lastVisit: "2026-04-15", visits: 12, fav: 1, notes: "Degradê baixo, máquina 1" },
-  { id: 2, name: "Pedro Santos",   phone: "(51) 99234-5678", lastVisit: "2026-04-20", visits: 8,  fav: 2, notes: "Barba completa, óleo" },
-  { id: 3, name: "Lucas Oliveira", phone: "(51) 99345-6789", lastVisit: "2026-04-10", visits: 23, fav: 1, notes: "Corte social, sem máquina" },
-  { id: 4, name: "Marcos Lima",    phone: "(51) 99456-7890", lastVisit: "2026-03-28", visits: 5,  fav: 3, notes: "Pigmentação + corte" },
-  { id: 5, name: "André Costa",    phone: "(51) 99567-8901", lastVisit: "2026-04-22", visits: 15, fav: 1, notes: "Fade médio" },
-  { id: 6, name: "Bruno Ferreira", phone: "(51) 99678-9012", lastVisit: "2026-04-25", visits: 31, fav: 2, notes: "VIP - combo sempre" },
-  { id: 7, name: "Thiago Rocha",   phone: "(51) 99789-0123", lastVisit: "2026-02-10", visits: 3,  fav: 1, notes: "Novo cliente" },
-  { id: 8, name: "Felipe Alves",   phone: "(51) 99890-1234", lastVisit: "2026-04-27", visits: 19, fav: 3, notes: "Degradê alto, navalhado" },
-];
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PLANOS (gating de funcionalidades)
@@ -285,88 +379,6 @@ function hasFeature(plan, key) {
   return !!p.features[key];
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SEED DATA
-// ═══════════════════════════════════════════════════════════════════════════
-function seedAppointments(services) {
-  const list = [];
-  let id = 1;
-  const cn = CLIENTS_INIT.map(c => c.name);
-
-  // Past 60 days — done
-  for (let d = -60; d < 0; d++) {
-    const ds = toDS(addDays(BASE_DATE, d));
-    if (parseDS(ds).getDay() === 0) continue;
-    const count = 3 + Math.abs(d % 5);
-    for (let i = 0; i < count; i++) {
-      list.push({
-        id: id++, date: ds,
-        time: HOURS[(2 + i * 3 + Math.abs(d)) % HOURS.length],
-        client: cn[(i + Math.abs(d) * 3) % 8],
-        service: services[(i * 2 + Math.abs(d)) % services.length],
-        barber: BARBERS[(i + Math.abs(d)) % 3],
-        status: "done", price: 0, paid: true,
-      });
-    }
-  }
-
-  // Today
-  const tf = [
-    ["08:00",0,0,0,"done"], ["08:30",1,2,1,"done"], ["09:00",2,0,0,"done"], ["09:30",3,3,2,"done"],
-    ["10:00",4,0,0,"confirmed"], ["10:30",5,2,1,"confirmed"], ["11:00",6,1,2,"pending"],
-    ["14:00",1,0,2,"confirmed"], ["14:30",2,2,0,"confirmed"], ["15:00",3,0,1,"pending"], ["16:00",7,3,0,"pending"],
-  ];
-  tf.forEach(([t, ci, si, bi, st]) => {
-    list.push({ id: id++, date: TODAY_DS, time: t, client: cn[ci], service: services[si], barber: BARBERS[bi], status: st, paid: st === "done" });
-  });
-
-  // Next 90 days
-  for (let d = 1; d <= 90; d++) {
-    const ds = toDS(addDays(BASE_DATE, d));
-    const dow = parseDS(ds).getDay();
-    if (dow === 0) continue;
-    const count = dow === 6 ? 8 : 3 + (d % 4);
-    for (let i = 0; i < count; i++) {
-      const st = d <= 7 ? "confirmed" : (d <= 30 && i % 3 === 0) ? "pending" : "confirmed";
-      list.push({
-        id: id++, date: ds,
-        time: HOURS[(2 + i * 3 + d) % HOURS.length],
-        client: cn[(i + d * 2) % 8],
-        service: services[(i * 2 + d) % services.length],
-        barber: BARBERS[(i + d) % 3],
-        status: st, paid: false,
-      });
-    }
-  }
-  return list;
-}
-
-function seedTransactions(services) {
-  const list = []; const methods = ["Pix", "Cartão", "Dinheiro"]; let id = 1;
-  for (let d = 90; d >= 0; d--) {
-    const ds = toDS(addDays(BASE_DATE, -d));
-    if (parseDS(ds).getDay() === 0) continue;
-    const n = 3 + (d % 5);
-    for (let i = 0; i < n; i++) {
-      const svc = services[i % Math.min(4, services.length)];
-      const barber = BARBERS[i % 3];
-      const commissionAmount = +(svc.price * barber.commission / 100).toFixed(2);
-      list.push({
-        id: id++, date: ds,
-        desc: svc.name + " - " + ["João","Pedro","Lucas","Marcos","André"][i % 5],
-        amount: svc.price, method: methods[i % 3],
-        barber: barber.name, barberId: barber.id,
-        out: false,
-        commissionPct: barber.commission,
-        commissionAmount,
-      });
-    }
-    if (d % 28 === 0) list.push({ id: id++, date: ds, desc: "Aluguel", amount: 2500, method: "Pix", barber: "-", out: true });
-    if (d % 10 === 0) list.push({ id: id++, date: ds, desc: "Reposição produtos", amount: 180 + (d % 7) * 20, method: "Pix", barber: "-", out: true });
-  }
-  return list;
-}
-
 function getAvailableSlots(appts, date, barberId, duration) {
   const busy = appts
     .filter(a => a.date === date && a.barber.id === barberId && a.status !== "cancelled")
@@ -381,6 +393,58 @@ function getAvailableSlots(appts, date, barberId, duration) {
     const e = s + duration;
     return !busy.some(b => s < b.e && e > b.s);
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HORÁRIOS POR DIA — utilitários
+// ═══════════════════════════════════════════════════════════════════════════
+// Convenção: 0=Dom, 1=Seg, ..., 6=Sáb (igual Date.getDay()).
+//
+// O shop pode ter:
+//   - dayHours: { 0:{open,close,enabled}, 1:{open,close,enabled}, ... }
+//     → modo "personalizado" (cada dia tem seu horário)
+//   - openTime + closeTime + workDays (legacy / modo "simples")
+//     → mesmo horário pra todos os dias abertos
+//
+// Sempre que precisar saber o horário de um dia específico, chame
+// getDayHours(shop, dayOfWeek). Ela cuida do fallback.
+function getDayHours(shop, dayOfWeek) {
+  // Modo personalizado: dayHours existe e tem entrada pra esse dia
+  if (shop?.dayHours && shop.dayHours[dayOfWeek]) {
+    const dh = shop.dayHours[dayOfWeek];
+    return {
+      open:    dh.open    || "08:00",
+      close:   dh.close   || "20:00",
+      enabled: dh.enabled !== false,
+    };
+  }
+  // Modo simples (legacy): mesmo horário pra todos, workDays diz quais abrem
+  const workDays = Array.isArray(shop?.workDays) ? shop.workDays : [1, 2, 3, 4, 5, 6];
+  return {
+    open:    shop?.openTime  || "08:00",
+    close:   shop?.closeTime || "20:00",
+    enabled: workDays.includes(dayOfWeek),
+  };
+}
+
+// Lista de slots HH:MM disponíveis num dia da semana (respeitando o open/close daquele dia).
+function getDayHourSlots(shop, dayOfWeek) {
+  const { open, close, enabled } = getDayHours(shop, dayOfWeek);
+  if (!enabled) return [];
+  return HOURS.filter(h => h >= open && h < close);
+}
+
+// Defaults pro modo "personalizado" — usados quando o usuário ativa pela primeira vez.
+// Pega como base o openTime/closeTime/workDays atuais (ou 08-20, seg-sáb).
+function buildDefaultDayHours(shop) {
+  const baseOpen  = shop?.openTime  || "08:00";
+  const baseClose = shop?.closeTime || "20:00";
+  const workDays  = Array.isArray(shop?.workDays) ? shop.workDays : [1, 2, 3, 4, 5, 6];
+  const dh = {};
+  for (let d = 0; d <= 6; d++) {
+    dh[d] = { open: baseOpen, close: baseClose, enabled: workDays.includes(d) };
+  }
+  return dh;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -434,6 +498,25 @@ function Logo({ scale = 1 }) {
         <tspan dx="3" fill={C.goldBright}>IN</tspan>
       </text>
     </svg>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOADING SCREEN — usado durante boot do app e na página pública /agendar/...
+// ═══════════════════════════════════════════════════════════════════════════
+// Animação staircase: as 5 barras do logo sobem uma após a outra (degraus
+// crescentes), constróem o logo Fadein, e somem na mesma ordem antes do ciclo
+// recomeçar. Sem barulho visual — entrega refinada, premium, sem pressa.
+function LoadingScreen({ message = "Carregando" }) {
+  return (
+    <div className="loading-screen">
+      <div className="loading-bars" aria-hidden="true">
+        <span /><span /><span /><span /><span />
+      </div>
+      <div className="loading-brand">FADE<b>IN</b></div>
+      <div className="loading-rule" aria-hidden="true" />
+      <p className="loading-message">{message}</p>
+    </div>
   );
 }
 
@@ -925,6 +1008,23 @@ function Dashboard({ appts, txns, services, navigate }) {
   const [hovBar, setHovBar]   = useState(null);
   const [now, setNow]         = useState(new Date());
 
+  // Detecta mobile pra ajustar viewBox do gráfico (mais quadrado em mobile,
+  // mais panorâmico em desktop). Tracked via matchMedia pra reagir a resize.
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 768px)");
+    const onChange = (e) => setIsMobile(e.matches);
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else mq.addListener(onChange); // fallback Safari antigo
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", onChange);
+      else mq.removeListener(onChange);
+    };
+  }, []);
+
   // Relógio em tempo real (atualiza a cada 30s — basta pra UX, não estressa o React)
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30000);
@@ -989,6 +1089,10 @@ function Dashboard({ appts, txns, services, navigate }) {
 
   const maxVal      = Math.max(...pts.map(p => p.val), 1);
   const totalPeriod = pts.reduce((s, p) => s + p.val, 0);
+  // Valor médio do período (usado pra linha de referência horizontal)
+  const avgVal = pts.length > 0 ? totalPeriod / pts.length : 0;
+  // Índice do ponto de pico (pra destacar)
+  const peakIdx = pts.reduce((best, p, i, arr) => p.val > arr[best].val ? i : best, 0);
 
   // Receita por serviço (top 5)
   const svcRev = useMemo(() => {
@@ -998,15 +1102,25 @@ function Dashboard({ appts, txns, services, navigate }) {
   }, [m30Txns]);
   const svcMax = svcRev.length ? svcRev[0][1] : 1;
 
-  // Area chart points (aumentado pra ocupar todo o espaço do dashboard)
-  const SVG_W = 1200, SVG_H = 380, PAD = 28;
+  // Dimensões do SVG: viewBox responsivo.
+  // Desktop: 1200×380 (panorâmico, aproveita largura) — proporção ~3.16:1
+  // Mobile:  380×340  (quase quadrado, aproveita altura disponível) — proporção ~1.12:1
+  // Como o SVG escala via width="100%" + viewBox, isso muda a proporção FINAL renderizada.
+  // Em mobile com ~340px de largura útil, altura final fica ~304px (vs ~108px do design antigo).
+  const SVG_W = isMobile ? 380 : 1200;
+  const SVG_H = isMobile ? 340 : 380;
+  const PAD_X = isMobile ? 32 : 32;     // espaço lateral pros labels do eixo Y
+  const PAD_T = isMobile ? 18 : 22;     // topo
+  const PAD_B = isMobile ? 26 : 28;     // base (labels do eixo X)
   const linePts = pts.map((p, i) => {
-    const x = PAD + (i / Math.max(pts.length - 1, 1)) * (SVG_W - PAD * 2);
-    const y = SVG_H - PAD - (p.val / maxVal) * (SVG_H - PAD * 2);
+    const x = PAD_X + (i / Math.max(pts.length - 1, 1)) * (SVG_W - PAD_X * 2);
+    const y = PAD_T + (1 - p.val / maxVal) * (SVG_H - PAD_T - PAD_B);
     return { x, y, ...p };
   });
   const linePath  = linePts.map((p, i) => (i === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ");
-  const areaPath  = linePath + " L" + (SVG_W - PAD) + " " + (SVG_H - PAD) + " L" + PAD + " " + (SVG_H - PAD) + " Z";
+  const areaPath  = linePath + " L" + (SVG_W - PAD_X) + " " + (SVG_H - PAD_B) + " L" + PAD_X + " " + (SVG_H - PAD_B) + " Z";
+  // Y da linha de média (referência horizontal)
+  const avgY = PAD_T + (1 - avgVal / maxVal) * (SVG_H - PAD_T - PAD_B);
 
   return (
     <div className="fade-in">
@@ -1025,7 +1139,7 @@ function Dashboard({ appts, txns, services, navigate }) {
       {/* HERO: Faturamento grande + 3 KPIs auxiliares */}
       <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 1.4fr) minmax(220px, 1fr)", gap: 14, marginBottom: 14 }} className="grid-responsive">
         {/* Hero card */}
-        <div style={{
+        <div className="hero-card" style={{
           background: "linear-gradient(135deg, " + C.card + " 0%, " + C.card2 + " 100%)",
           border: "1px solid " + C.borderHi, borderRadius: 16,
           padding: "24px 26px", position: "relative", overflow: "hidden",
@@ -1052,7 +1166,7 @@ function Dashboard({ appts, txns, services, navigate }) {
             Faturamento · últimos 30 dias
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-            <span style={{ fontSize: 38, fontWeight: 700, color: C.goldBright, letterSpacing: -1, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+            <span className="hero-revenue" style={{ fontSize: 38, fontWeight: 700, color: C.goldBright, letterSpacing: -1, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
               {fmtMoney(revenue)}
             </span>
             <span style={{
@@ -1067,7 +1181,7 @@ function Dashboard({ appts, txns, services, navigate }) {
           </div>
 
           {/* sparkline 30d embutido */}
-          <svg width="100%" height="48" viewBox={"0 0 200 48"} preserveAspectRatio="none" style={{ display: "block" }}>
+          <svg width="100%" height="48" viewBox={"0 0 200 48"} preserveAspectRatio="none" className="hero-sparkline" style={{ display: "block" }}>
             <defs>
               <linearGradient id="sparkArea" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%"  stopColor={C.goldBright} stopOpacity="0.35" />
@@ -1098,7 +1212,7 @@ function Dashboard({ appts, txns, services, navigate }) {
         </div>
 
         {/* 3 mini-KPIs empilhados */}
-        <div style={{ display: "grid", gridTemplateRows: "1fr 1fr 1fr", gap: 8 }}>
+        <div className="mini-kpis-stack" style={{ display: "grid", gridTemplateRows: "1fr 1fr 1fr", gap: 8 }}>
           {[
             { label: "Hoje",          value: todayAppts.length, sub: "agendamentos", color: C.goldBright, icon: Ic.calendar },
             { label: "Lucro 30d",     value: fmtMoney(revenue - expenses), sub: "receita − despesas", color: revenue > expenses ? C.green : C.red, icon: Ic.trendUp },
@@ -1115,8 +1229,8 @@ function Dashboard({ appts, txns, services, navigate }) {
               }}>{k.icon}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 10, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>{k.label}</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: k.color, lineHeight: 1.1, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{k.value}</div>
-                <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{k.sub}</div>
+                <div className="mini-kpi-value" style={{ fontSize: 18, fontWeight: 700, color: k.color, lineHeight: 1.1, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{k.value}</div>
+                <div className="mini-kpi-sub" style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{k.sub}</div>
               </div>
             </div>
           ))}
@@ -1164,7 +1278,7 @@ function Dashboard({ appts, txns, services, navigate }) {
               {fmtMoney(totalPeriod)}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 4, background: C.bgSunken, padding: 3, borderRadius: 9 }}>
+          <div className="chart-range-tabs" style={{ display: "flex", gap: 4, background: C.bgSunken, padding: 3, borderRadius: 9 }}>
             {[["7d","7 dias"],["30d","30 dias"],["max","90 dias"]].map(([v, l]) => (
               <button key={v} onClick={() => setRange(v)} style={{
                 padding: "5px 12px", borderRadius: 7, border: "none",
@@ -1177,60 +1291,224 @@ function Dashboard({ appts, txns, services, navigate }) {
         </div>
 
         <div className="dashboard-chart-wrap" style={{ position: "relative" }}>
-          <svg width="100%" viewBox={"0 0 " + SVG_W + " " + SVG_H} preserveAspectRatio="xMidYMid meet" style={{ display: "block", width: "100%", overflow: "visible" }}>
+          <svg
+            width="100%"
+            viewBox={"0 0 " + SVG_W + " " + SVG_H}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ display: "block", width: "100%", overflow: "visible" }}
+          >
             <defs>
+              {/* Gradient da área: 3 stops pra dar mais profundidade que o degradê comum */}
               <linearGradient id="dashArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"  stopColor={C.goldBright} stopOpacity="0.4" />
+                <stop offset="0%"   stopColor={C.goldBright} stopOpacity="0.45" />
+                <stop offset="55%"  stopColor={C.goldBright} stopOpacity="0.12" />
                 <stop offset="100%" stopColor={C.goldBright} stopOpacity="0" />
               </linearGradient>
+              {/* Gradient do traço da linha — mais brilhante no topo, mais sutil na base */}
+              <linearGradient id="dashLine" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#F0C76A" />
+                <stop offset="100%" stopColor={C.goldBright} />
+              </linearGradient>
+              {/* Glow pro pico e ponto atual */}
+              <filter id="dashGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
             </defs>
-            {/* grid lines */}
-            {[0, 0.25, 0.5, 0.75, 1].map(f => (
-              <line key={f} x1={PAD} y1={PAD + (SVG_H - PAD * 2) * f} x2={SVG_W - PAD} y2={PAD + (SVG_H - PAD * 2) * f}
-                stroke={C.border} strokeWidth="1" strokeDasharray="3 3" opacity={f === 1 ? 0.8 : 0.4} />
-            ))}
-            {/* area + line */}
+
+            {/* Grid horizontal: 4 linhas de referência (0%, 25%, 50%, 75%, 100%) */}
+            {[0, 0.25, 0.5, 0.75, 1].map(f => {
+              const y = PAD_T + f * (SVG_H - PAD_T - PAD_B);
+              return (
+                <line key={f}
+                  x1={PAD_X} y1={y} x2={SVG_W - PAD_X} y2={y}
+                  stroke={C.border} strokeWidth="1"
+                  strokeDasharray={f === 1 ? "0" : "2 4"}
+                  opacity={f === 1 ? 0.7 : 0.35}
+                />
+              );
+            })}
+
+            {/* Labels do eixo Y (3 valores: max, meio, 0) — discretos à esquerda */}
+            {[1, 0.5, 0].map(f => {
+              const y = PAD_T + (1 - f) * (SVG_H - PAD_T - PAD_B);
+              const value = maxVal * f;
+              const label = value >= 1000 ? "R$" + Math.round(value / 100) / 10 + "k" : "R$" + Math.round(value);
+              return (
+                <text key={f}
+                  x={PAD_X - 6} y={y + 3}
+                  textAnchor="end"
+                  fontSize={isMobile ? "10" : "10"}
+                  fill={C.muted}
+                  fontFamily="ui-monospace, monospace"
+                >{label}</text>
+              );
+            })}
+
+            {/* Linha de média (referência horizontal pontilhada) — só mostra se houver dado */}
+            {avgVal > 0 && (
+              <g>
+                <line
+                  x1={PAD_X} y1={avgY} x2={SVG_W - PAD_X} y2={avgY}
+                  stroke={C.fgMuted} strokeWidth="1" strokeDasharray="4 4" opacity="0.5"
+                />
+                <text
+                  x={SVG_W - PAD_X - 4} y={avgY - 5}
+                  textAnchor="end"
+                  fontSize={isMobile ? "9" : "9"}
+                  fill={C.fgMuted}
+                  fontWeight="600"
+                  letterSpacing="0.4"
+                >MÉDIA · {fmtMoney(avgVal).replace("R$\u00A0", "R$")}</text>
+              </g>
+            )}
+
+            {/* Área + linha principal */}
             {linePts.length > 1 && (
               <>
                 <path d={areaPath} fill="url(#dashArea)" />
-                <path d={linePath} fill="none" stroke={C.goldBright} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
+                <path d={linePath}
+                  fill="none"
+                  stroke="url(#dashLine)"
+                  strokeWidth={isMobile ? "2.8" : "2.4"}
+                  strokeLinejoin="round" strokeLinecap="round"
+                />
               </>
             )}
-            {/* dots + hover */}
+
+            {/* Destaque do pico: anel sutil ao redor do maior valor */}
+            {linePts.length > 1 && pts[peakIdx]?.val > 0 && (() => {
+              const p = linePts[peakIdx];
+              return (
+                <g>
+                  <circle cx={p.x} cy={p.y} r="9" fill="none" stroke={C.goldBright} strokeWidth="1" opacity="0.35" />
+                  <circle cx={p.x} cy={p.y} r="5.5" fill={C.goldBright} filter="url(#dashGlow)" opacity="0.9" />
+                </g>
+              );
+            })()}
+
+            {/* Pontos de dados + interação */}
             {linePts.map((p, i) => {
               const isToday = p.ds === TODAY_DS;
               const isHov   = hovBar === i;
+              const isLast  = i === linePts.length - 1;
+              const isPeak  = i === peakIdx && p.val > 0;
               return (
                 <g key={p.ds} style={{ cursor: "pointer" }}
-                   onMouseEnter={() => setHovBar(i)} onMouseLeave={() => setHovBar(null)}>
-                  <rect x={p.x - 14} y={0} width={28} height={SVG_H} fill="transparent" />
-                  <circle cx={p.x} cy={p.y}
-                    r={isHov || isToday ? 5 : 3.5}
-                    fill={isToday ? C.goldBright : C.card}
-                    stroke={C.goldBright} strokeWidth={isToday ? 0 : 2}
-                  />
-                  {isHov && p.val > 0 && (
-                    <g>
-                      <rect x={p.x - 50} y={p.y - 44} width="100" height="34" rx="6" fill={C.card2} stroke={C.borderHi} />
-                      <text x={p.x} y={p.y - 28} textAnchor="middle" fontSize="9" fill={C.fgMuted}>{p.label}</text>
-                      <text x={p.x} y={p.y - 16} textAnchor="middle" fontSize="11" fill={C.goldBright} fontWeight="700">{fmtMoney(p.val)}</text>
-                    </g>
+                   onMouseEnter={() => setHovBar(i)}
+                   onMouseLeave={() => setHovBar(null)}
+                   onTouchStart={() => setHovBar(i)}>
+                  {/* área de hit maior pro toque no mobile */}
+                  <rect x={p.x - (isMobile ? 18 : 14)} y={0}
+                        width={isMobile ? 36 : 28} height={SVG_H} fill="transparent" />
+                  {!isPeak && (
+                    <circle cx={p.x} cy={p.y}
+                      r={isHov || isToday || isLast ? 4.5 : 3}
+                      fill={isToday || isLast ? C.goldBright : C.card}
+                      stroke={C.goldBright}
+                      strokeWidth={isToday || isLast ? 0 : 2}
+                    />
                   )}
+                  {/* "Agora" — pulsa no último ponto se for hoje */}
+                  {isLast && isToday && (
+                    <circle cx={p.x} cy={p.y} r="9" fill={C.goldBright} opacity="0.25"
+                      className="pulse" />
+                  )}
+                  {/* Tooltip ao hover */}
+                  {isHov && p.val > 0 && (() => {
+                    const tipW = isMobile ? 110 : 100;
+                    const tipH = 38;
+                    // mantém o tooltip dentro da viewBox
+                    const tipX = Math.max(PAD_X, Math.min(SVG_W - PAD_X - tipW, p.x - tipW / 2));
+                    const tipY = Math.max(PAD_T, p.y - tipH - 8);
+                    return (
+                      <g pointerEvents="none">
+                        <rect x={tipX} y={tipY} width={tipW} height={tipH} rx="7"
+                          fill={C.bgSunken} stroke={C.borderHi} strokeWidth="1" />
+                        <text x={tipX + tipW / 2} y={tipY + 14} textAnchor="middle"
+                          fontSize="9" fill={C.fgMuted}
+                          textTransform="uppercase" letterSpacing="0.5">{p.label}</text>
+                        <text x={tipX + tipW / 2} y={tipY + 29} textAnchor="middle"
+                          fontSize="12" fill={C.goldBright} fontWeight="700"
+                          fontFamily="ui-monospace, monospace">{fmtMoney(p.val)}</text>
+                      </g>
+                    );
+                  })()}
                 </g>
               );
             })}
-            {/* x-axis labels */}
+
+            {/* Labels do eixo X (datas) */}
             {linePts.map((p, i) => {
-              const show = range === "7d" ? true : (i % Math.ceil(linePts.length / 6) === 0 || i === linePts.length - 1);
+              // Em mobile mostra menos labels pra não ficar apertado
+              const targetCount = isMobile ? 4 : 6;
+              const show = range === "7d"
+                ? true
+                : (i % Math.ceil(linePts.length / targetCount) === 0 || i === linePts.length - 1);
               if (!show) return null;
               return (
-                <text key={p.ds + "-l"} x={p.x} y={SVG_H - 2} textAnchor="middle" fontSize="9" fill={C.fgMuted}>
-                  {p.label}
-                </text>
+                <text key={p.ds + "-l"}
+                  x={p.x} y={SVG_H - 6}
+                  textAnchor="middle"
+                  fontSize={isMobile ? "10" : "9"}
+                  fill={C.fgMuted}
+                  fontWeight="500"
+                >{p.label}</text>
               );
             })}
           </svg>
         </div>
+
+        {/* Resumo do período abaixo do chart — pico, média, comparação */}
+        {pts.length > 1 && (
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)",
+            gap: 8,
+            marginTop: 14,
+            paddingTop: 14,
+            borderTop: "1px solid " + C.border,
+          }}>
+            <div>
+              <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                Pico
+              </div>
+              <div style={{ fontSize: 14, color: C.goldBright, fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+                {fmtMoney(pts[peakIdx]?.val || 0)}
+              </div>
+              <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>
+                {pts[peakIdx]?.label || "—"}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                Média / dia
+              </div>
+              <div style={{ fontSize: 14, color: C.fg, fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+                {fmtMoney(avgVal)}
+              </div>
+              <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>
+                {pts.length} {pts.length === 1 ? "registro" : "registros"}
+              </div>
+            </div>
+            {!isMobile && (
+              <div>
+                <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                  Hoje
+                </div>
+                <div style={{ fontSize: 14, color: C.fg, fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+                  {fmtMoney(linePts[linePts.length - 1]?.val || 0)}
+                </div>
+                <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>
+                  {(linePts[linePts.length - 1]?.val || 0) >= avgVal ? "↑ acima da média" : "↓ abaixo da média"}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bottom row: Today + Top services */}
@@ -2023,6 +2301,22 @@ function Financeiro({ txns, setTxns, navigate, createTxn, deleteTxn }) {
   const [hov, setHov]       = useState(null);
   const [form, setForm]     = useState({ desc: "", amount: "", method: "Pix", out: false });
 
+  // Detecta mobile pra ajustar viewBox do gráfico (mesma estratégia do Dashboard)
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 768px)");
+    const onChange = (e) => setIsMobile(e.matches);
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else mq.addListener(onChange);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", onChange);
+      else mq.removeListener(onChange);
+    };
+  }, []);
+
   const startDs = period === "today" ? TODAY_DS : toDS(addDays(BASE_DATE, period === "week" ? -7 : -30));
   const filtered = txns
     .filter(t => t.date >= startDs)
@@ -2038,28 +2332,45 @@ function Financeiro({ txns, setTxns, navigate, createTxn, deleteTxn }) {
       const ds  = toDS(addDays(BASE_DATE, -i));
       const inc = txns.filter(t => t.date === ds && !t.out).reduce((s, t) => s + t.amount, 0);
       const out = txns.filter(t => t.date === ds &&  t.out).reduce((s, t) => s + t.amount, 0);
-      arr.push({ ds, inc, out, label: fmtWeekday(ds) });
+      // Em "30 dias" mostra dia/mês curto; em "7 dias" mostra dia da semana
+      const label = period === "week"
+        ? fmtWeekday(ds)
+        : period === "today"
+        ? "Hoje"
+        : fmtShort(ds);
+      arr.push({ ds, inc, out, balance: inc - out, label });
     }
     return arr;
-  }, [period, txns]);
+  }, [period, txns, days]);
 
-  const maxInc  = Math.max(...daily.map(p => Math.max(p.inc, p.out)), 1);
-  const SVG_W   = 600, SVG_H = 130;
-  const padding = 14;
+  // Escala do eixo Y: pega o maior valor entre entradas e saídas
+  const maxVal = Math.max(...daily.map(p => Math.max(p.inc, p.out)), 1);
+  // Picos de cada série (pra destacar)
+  const peakInIdx  = daily.reduce((b, p, i, a) => p.inc > a[b].inc ? i : b, 0);
+  const peakOutIdx = daily.reduce((b, p, i, a) => p.out > a[b].out ? i : b, 0);
+  // Saldo médio do período
+  const avgBalance = daily.length > 0
+    ? daily.reduce((s, p) => s + p.balance, 0) / daily.length
+    : 0;
 
-  const incPts = daily.map((p, i) => {
-    const x = padding + (i / (daily.length - 1 || 1)) * (SVG_W - padding * 2);
-    const y = SVG_H - padding - (p.inc / maxInc) * (SVG_H - padding * 2);
-    return x.toFixed(1) + "," + y.toFixed(1);
-  }).join(" ");
+  // Dimensões responsivas — desktop panorâmico, mobile mais quadrado
+  // (same pattern do gráfico do Dashboard)
+  const SVG_W = isMobile ? 380 : 900;
+  const SVG_H = isMobile ? 280 : 280;
+  const PAD_X = 36;
+  const PAD_T = 16;
+  const PAD_B = 24;
 
-  const outPts = daily.map((p, i) => {
-    const x = padding + (i / (daily.length - 1 || 1)) * (SVG_W - padding * 2);
-    const y = SVG_H - padding - (p.out / maxInc) * (SVG_H - padding * 2);
-    return x.toFixed(1) + "," + y.toFixed(1);
-  }).join(" ");
+  // Coordenadas dos pontos de cada série
+  const xAt = (i) => PAD_X + (i / Math.max(daily.length - 1, 1)) * (SVG_W - PAD_X * 2);
+  const yAt = (val) => PAD_T + (1 - val / maxVal) * (SVG_H - PAD_T - PAD_B);
 
-  const areaPts = padding + "," + (SVG_H - padding) + " " + incPts + " " + (SVG_W - padding) + "," + (SVG_H - padding);
+  const incPts = daily.map((p, i) => ({ x: xAt(i), y: yAt(p.inc), ...p }));
+  const outPts = daily.map((p, i) => ({ x: xAt(i), y: yAt(p.out), ...p }));
+
+  const incLine = incPts.map((p, i) => (i === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ");
+  const outLine = outPts.map((p, i) => (i === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ");
+  const incArea = incLine + " L" + (SVG_W - PAD_X) + " " + (SVG_H - PAD_B) + " L" + PAD_X + " " + (SVG_H - PAD_B) + " Z";
 
   const byMethod = {};
   filtered.filter(t => !t.out).forEach(t => { byMethod[t.method] = (byMethod[t.method] || 0) + t.amount; });
@@ -2105,64 +2416,281 @@ function Financeiro({ txns, setTxns, navigate, createTxn, deleteTxn }) {
         <KPI label="Saldo"    value={fmtMoney(totalIn - totalOut)} note={totalIn >= totalOut ? "positivo" : "negativo"} up={totalIn >= totalOut} accent />
       </div>
 
-      <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 14, padding: "20px 24px", marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-          <span style={{ fontSize: 11, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>
-            Fluxo de caixa
-          </span>
-          <div style={{ display: "flex", gap: 14, fontSize: 11 }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 10, height: 3, background: C.green, borderRadius: 2 }} />
-              <span style={{ color: C.fgMuted }}>Entradas:</span>
-              <b style={{ color: C.green }}>{fmtMoney(totalIn)}</b>
-            </span>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 10, height: 0, borderTop: "2px dashed " + C.red }} />
-              <span style={{ color: C.fgMuted }}>Saídas:</span>
-              <b style={{ color: C.red }}>{fmtMoney(totalOut)}</b>
-            </span>
+      <div style={{
+        background: C.card, border: "1px solid " + C.border, borderRadius: 14,
+        padding: "20px 24px", marginBottom: 16,
+        boxShadow: "0 1px 0 " + C.borderHi + " inset",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 11, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>
+              Fluxo de caixa
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: totalIn >= totalOut ? C.green : C.red, marginTop: 4, fontVariantNumeric: "tabular-nums", letterSpacing: -0.3 }}>
+              {totalIn >= totalOut ? "+" : ""}{fmtMoney(totalIn - totalOut)}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+              <span style={{ width: 8, height: 8, background: C.green, borderRadius: 2 }} />
+              <span style={{ color: C.fgMuted }}>Entradas</span>
+              <b style={{ color: C.green, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(totalIn)}</b>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+              <span style={{ width: 8, height: 8, background: C.red, borderRadius: 2 }} />
+              <span style={{ color: C.fgMuted }}>Saídas</span>
+              <b style={{ color: C.red, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(totalOut)}</b>
+            </div>
           </div>
         </div>
 
-        <svg width="100%" viewBox={"0 0 " + SVG_W + " " + SVG_H} style={{ display: "block", overflow: "visible" }}>
-          <defs>
-            <linearGradient id="incArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%"   stopColor={C.green} stopOpacity="0.4" />
-              <stop offset="100%" stopColor={C.green} stopOpacity="0.0" />
-            </linearGradient>
-          </defs>
-          {[0.25, 0.5, 0.75].map(f => (
-            <line key={f} x1={padding} y1={padding + (SVG_H - padding * 2) * f} x2={SVG_W - padding} y2={padding + (SVG_H - padding * 2) * f}
-              stroke={C.border} strokeWidth="1" strokeDasharray="3 3" opacity="0.6" />
-          ))}
-          {daily.length > 1 && (
-            <>
-              <polygon points={areaPts} fill="url(#incArea)" />
-              <polyline points={incPts} fill="none" stroke={C.green} strokeWidth="2" strokeLinejoin="round" />
-              <polyline points={outPts} fill="none" stroke={C.red} strokeWidth="1.6" strokeLinejoin="round" strokeDasharray="4 3" />
-            </>
-          )}
-          {daily.map((p, i) => {
-            const cx = padding + (i / (daily.length - 1 || 1)) * (SVG_W - padding * 2);
-            const cy = SVG_H - padding - (p.inc / maxInc) * (SVG_H - padding * 2);
-            const isHov = hov === i;
-            return (
-              <g key={i} style={{ cursor: "pointer" }}
-                 onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}>
-                <rect x={cx - 15} y={0} width={30} height={SVG_H} fill="transparent" />
-                <circle cx={cx} cy={cy} r={isHov ? 5 : 3} fill={C.green} stroke={C.bgSunken} strokeWidth="2" />
-                {isHov && (
-                  <g>
-                    <rect x={cx - 50} y={cy - 44} width={100} height={36} rx="6"
-                      fill={C.card2} stroke={C.borderHi} />
-                    <text x={cx} y={cy - 30} textAnchor="middle" fontSize="9" fill={C.fgMuted}>{p.label}</text>
-                    <text x={cx} y={cy - 18} textAnchor="middle" fontSize="11" fill={C.green} fontWeight="700">↑ {fmtMoney(p.inc)}</text>
-                  </g>
-                )}
-              </g>
-            );
-          })}
-        </svg>
+        <div className="dashboard-chart-wrap" style={{ position: "relative" }}>
+          <svg
+            width="100%"
+            viewBox={"0 0 " + SVG_W + " " + SVG_H}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ display: "block", width: "100%", overflow: "visible" }}
+          >
+            <defs>
+              {/* Gradients ricos (3 stops) pra entradas e saídas */}
+              <linearGradient id="finIncArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor={C.green} stopOpacity="0.42" />
+                <stop offset="55%"  stopColor={C.green} stopOpacity="0.10" />
+                <stop offset="100%" stopColor={C.green} stopOpacity="0" />
+              </linearGradient>
+              <linearGradient id="finOutArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor={C.red} stopOpacity="0.30" />
+                <stop offset="100%" stopColor={C.red} stopOpacity="0" />
+              </linearGradient>
+              <linearGradient id="finIncLine" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#7DD894" />
+                <stop offset="100%" stopColor={C.green} />
+              </linearGradient>
+              <linearGradient id="finOutLine" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#F08585" />
+                <stop offset="100%" stopColor={C.red} />
+              </linearGradient>
+              <filter id="finGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+
+            {/* Grid horizontal — 4 linhas de referência */}
+            {[0, 0.25, 0.5, 0.75, 1].map(f => {
+              const y = PAD_T + f * (SVG_H - PAD_T - PAD_B);
+              return (
+                <line key={f}
+                  x1={PAD_X} y1={y} x2={SVG_W - PAD_X} y2={y}
+                  stroke={C.border} strokeWidth="1"
+                  strokeDasharray={f === 1 ? "0" : "2 4"}
+                  opacity={f === 1 ? 0.7 : 0.32}
+                />
+              );
+            })}
+
+            {/* Labels do eixo Y — discretos à esquerda */}
+            {[1, 0.5, 0].map(f => {
+              const y = PAD_T + (1 - f) * (SVG_H - PAD_T - PAD_B);
+              const value = maxVal * f;
+              const label = value >= 1000 ? "R$" + Math.round(value / 100) / 10 + "k" : "R$" + Math.round(value);
+              return (
+                <text key={f}
+                  x={PAD_X - 6} y={y + 3}
+                  textAnchor="end" fontSize="10"
+                  fill={C.muted}
+                  fontFamily="ui-monospace, monospace"
+                >{label}</text>
+              );
+            })}
+
+            {daily.length > 1 && (
+              <>
+                {/* Áreas — entrada por baixo, saída por cima com transparência */}
+                <path d={incArea} fill="url(#finIncArea)" />
+                {/* Saída como path linha + área menor (não vai até 0, fica como "sombra") */}
+                {(() => {
+                  const outArea = outLine + " L" + (SVG_W - PAD_X) + " " + (SVG_H - PAD_B) + " L" + PAD_X + " " + (SVG_H - PAD_B) + " Z";
+                  return <path d={outArea} fill="url(#finOutArea)" />;
+                })()}
+                {/* Linhas — entrada sólida, saída sólida (não tracejada — fica mais legível) */}
+                <path d={incLine} fill="none" stroke="url(#finIncLine)" strokeWidth={isMobile ? "2.6" : "2.2"} strokeLinejoin="round" strokeLinecap="round" />
+                <path d={outLine} fill="none" stroke="url(#finOutLine)" strokeWidth={isMobile ? "2" : "1.8"} strokeLinejoin="round" strokeLinecap="round" />
+              </>
+            )}
+
+            {/* Destaque do pico de entradas (anel + glow verde) */}
+            {daily.length > 1 && daily[peakInIdx]?.inc > 0 && (() => {
+              const p = incPts[peakInIdx];
+              return (
+                <g>
+                  <circle cx={p.x} cy={p.y} r="9" fill="none" stroke={C.green} strokeWidth="1" opacity="0.4" />
+                  <circle cx={p.x} cy={p.y} r="5" fill={C.green} filter="url(#finGlow)" opacity="0.9" />
+                </g>
+              );
+            })()}
+            {/* Destaque do pico de saídas (anel vermelho mais sutil) */}
+            {daily.length > 1 && daily[peakOutIdx]?.out > 0 && peakOutIdx !== peakInIdx && (() => {
+              const p = outPts[peakOutIdx];
+              return (
+                <circle cx={p.x} cy={p.y} r="4.5" fill={C.red} stroke={C.card} strokeWidth="1.5" />
+              );
+            })()}
+
+            {/* Pontos + interação */}
+            {daily.map((p, i) => {
+              const isHov  = hov === i;
+              const isLast = i === daily.length - 1;
+              const isPeakIn  = i === peakInIdx  && p.inc > 0;
+              const isPeakOut = i === peakOutIdx && p.out > 0;
+              const ip = incPts[i], op = outPts[i];
+              return (
+                <g key={p.ds}
+                   style={{ cursor: "pointer" }}
+                   onMouseEnter={() => setHov(i)}
+                   onMouseLeave={() => setHov(null)}
+                   onTouchStart={() => setHov(i)}>
+                  {/* hit area */}
+                  <rect x={ip.x - (isMobile ? 18 : 14)} y={0}
+                        width={isMobile ? 36 : 28} height={SVG_H} fill="transparent" />
+                  {/* ponto entrada (não desenha se já é o pico destacado) */}
+                  {!isPeakIn && p.inc > 0 && (
+                    <circle cx={ip.x} cy={ip.y}
+                      r={isHov || isLast ? 4 : 2.5}
+                      fill={isLast ? C.green : C.card}
+                      stroke={C.green}
+                      strokeWidth={isLast ? 0 : 1.6}
+                    />
+                  )}
+                  {/* ponto saída */}
+                  {!isPeakOut && p.out > 0 && (
+                    <circle cx={op.x} cy={op.y}
+                      r={isHov ? 3.5 : 2.2}
+                      fill={C.card}
+                      stroke={C.red}
+                      strokeWidth="1.5"
+                    />
+                  )}
+                  {/* "agora" pulsando no último ponto se há entrada hoje */}
+                  {isLast && p.inc > 0 && (
+                    <circle cx={ip.x} cy={ip.y} r="9" fill={C.green} opacity="0.25" className="pulse" />
+                  )}
+                  {/* tooltip rico: data + entrada + saída + saldo */}
+                  {isHov && (p.inc > 0 || p.out > 0) && (() => {
+                    const tipW = isMobile ? 140 : 130;
+                    const tipH = 68;
+                    const anchorY = Math.min(ip.y, op.y || ip.y);
+                    const tipX = Math.max(PAD_X, Math.min(SVG_W - PAD_X - tipW, ip.x - tipW / 2));
+                    const tipY = Math.max(PAD_T, anchorY - tipH - 10);
+                    const balanceColor = p.balance >= 0 ? C.green : C.red;
+                    return (
+                      <g pointerEvents="none">
+                        <rect x={tipX} y={tipY} width={tipW} height={tipH} rx="8"
+                          fill={C.bgSunken} stroke={C.borderHi} strokeWidth="1" />
+                        <text x={tipX + 10} y={tipY + 14} fontSize="9" fill={C.fgMuted}
+                              fontWeight="600" textTransform="uppercase" letterSpacing="0.5">{p.label}</text>
+                        {/* Entrada */}
+                        <circle cx={tipX + 12} cy={tipY + 28} r="3" fill={C.green} />
+                        <text x={tipX + 20} y={tipY + 31} fontSize="10" fill={C.fgMuted}>Entrada</text>
+                        <text x={tipX + tipW - 10} y={tipY + 31} textAnchor="end"
+                              fontSize="11" fill={C.green} fontWeight="700"
+                              fontFamily="ui-monospace, monospace">{fmtMoney(p.inc)}</text>
+                        {/* Saída */}
+                        <circle cx={tipX + 12} cy={tipY + 44} r="3" fill={C.red} />
+                        <text x={tipX + 20} y={tipY + 47} fontSize="10" fill={C.fgMuted}>Saída</text>
+                        <text x={tipX + tipW - 10} y={tipY + 47} textAnchor="end"
+                              fontSize="11" fill={C.red} fontWeight="700"
+                              fontFamily="ui-monospace, monospace">{fmtMoney(p.out)}</text>
+                        {/* Saldo */}
+                        <line x1={tipX + 8} y1={tipY + 54} x2={tipX + tipW - 8} y2={tipY + 54}
+                              stroke={C.border} strokeWidth="1" />
+                        <text x={tipX + 10} y={tipY + 64} fontSize="10" fill={C.fgMuted} fontWeight="600">Saldo</text>
+                        <text x={tipX + tipW - 10} y={tipY + 64} textAnchor="end"
+                              fontSize="11" fill={balanceColor} fontWeight="700"
+                              fontFamily="ui-monospace, monospace">{p.balance >= 0 ? "+" : ""}{fmtMoney(p.balance)}</text>
+                      </g>
+                    );
+                  })()}
+                </g>
+              );
+            })}
+
+            {/* Labels do eixo X */}
+            {daily.map((p, i) => {
+              const targetCount = isMobile ? 4 : 7;
+              const show = period === "week"
+                ? true
+                : period === "today"
+                ? true
+                : (i % Math.ceil(daily.length / targetCount) === 0 || i === daily.length - 1);
+              if (!show) return null;
+              return (
+                <text key={p.ds + "-l"}
+                  x={xAt(i)} y={SVG_H - 6}
+                  textAnchor="middle"
+                  fontSize={isMobile ? "10" : "9"}
+                  fill={C.fgMuted}
+                  fontWeight="500"
+                >{p.label}</text>
+              );
+            })}
+          </svg>
+        </div>
+
+        {/* Resumo abaixo do chart: melhor dia / pior dia / saldo médio */}
+        {daily.length > 1 && (
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)",
+            gap: 8,
+            marginTop: 14,
+            paddingTop: 14,
+            borderTop: "1px solid " + C.border,
+          }}>
+            <div>
+              <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                Melhor dia
+              </div>
+              <div style={{ fontSize: 14, color: C.green, fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+                {fmtMoney(daily[peakInIdx]?.inc || 0)}
+              </div>
+              <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>
+                {daily[peakInIdx]?.label || "—"}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                Maior gasto
+              </div>
+              <div style={{ fontSize: 14, color: C.red, fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+                {fmtMoney(daily[peakOutIdx]?.out || 0)}
+              </div>
+              <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>
+                {(daily[peakOutIdx]?.out || 0) > 0 ? daily[peakOutIdx]?.label : "—"}
+              </div>
+            </div>
+            {!isMobile && (
+              <div>
+                <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                  Saldo médio / dia
+                </div>
+                <div style={{
+                  fontSize: 14,
+                  color: avgBalance >= 0 ? C.fg : C.red,
+                  fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2,
+                }}>
+                  {avgBalance >= 0 ? "+" : ""}{fmtMoney(avgBalance)}
+                </div>
+                <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>
+                  {daily.length} dias analisados
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginTop: 16, paddingTop: 16, borderTop: "1px solid " + C.border }}>
           {(() => {
@@ -2262,27 +2790,23 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients,
   const origin = (typeof window !== "undefined" && window.location.origin) ? window.location.origin : "https://fadein.app";
   const link = origin + "/agendar/" + slug;
 
-  // Dias disponíveis: respeita os dias de funcionamento configurados em Config.
-  // workDays usa convenção JS: 0=Dom, 1=Seg, ..., 6=Sáb.
-  const workDays = Array.isArray(shop.workDays) && shop.workDays.length > 0
-    ? shop.workDays
-    : [1, 2, 3, 4, 5, 6]; // fallback: seg-sáb
-
+  // Dias disponíveis: respeita os dias de funcionamento configurados em Config
+  // (suporta dayHours por dia OU openTime/closeTime+workDays legacy via getDayHours).
   const bookDates = useMemo(() => {
     const arr = [];
     for (let i = 0; i <= 30; i++) {
-      const ds = toDS(addDays(BASE_DATE, i));
-      if (workDays.includes(parseDS(ds).getDay())) arr.push(ds);
+      const ds  = toDS(addDays(BASE_DATE, i));
+      const dow = parseDS(ds).getDay();
+      if (getDayHours(shop, dow).enabled) arr.push(ds);
     }
     return arr;
-  }, [workDays]);
+  }, [shop]);
 
-  // Slots de horário: filtra HOURS pelo openTime/closeTime do shop
+  // Slots de horário do dia selecionado — respeita o open/close DAQUELE dia
   const dayHours = useMemo(() => {
-    const open  = shop.openTime  || "08:00";
-    const close = shop.closeTime || "20:00";
-    return HOURS.filter(h => h >= open && h < close);
-  }, [shop.openTime, shop.closeTime]);
+    const dow = parseDS(selDate).getDay();
+    return getDayHourSlots(shop, dow);
+  }, [shop, selDate]);
 
   const allSlotsInfo = useMemo(() => {
     if (!selBarber || !selSvc) return [];
@@ -2625,6 +3149,8 @@ function PublicBooking({ slug }) {
           openTime:  shopData.open_time  || "08:00",
           closeTime: shopData.close_time || "20:00",
           workDays:  Array.isArray(shopData.work_days) ? shopData.work_days : [1, 2, 3, 4, 5, 6],
+          // Horário customizado por dia (opcional). Se existir, tem prioridade sobre openTime/closeTime.
+          dayHours:  shopData.day_hours && typeof shopData.day_hours === "object" ? shopData.day_hours : null,
           trialEndsAt:        shopData.trial_ends_at || null,
           subscriptionStatus: shopData.subscription_status || "trial",
         });
@@ -2682,23 +3208,21 @@ function PublicBooking({ slug }) {
   }, [slug]);
 
   const bookDates = useMemo(() => {
-    const workDays = Array.isArray(shop?.workDays) && shop.workDays.length > 0
-      ? shop.workDays
-      : [1, 2, 3, 4, 5, 6];
     const arr = [];
     for (let i = 0; i <= 30; i++) {
-      const ds = toDS(addDays(BASE_DATE, i));
-      if (workDays.includes(parseDS(ds).getDay())) arr.push(ds);
+      const ds  = toDS(addDays(BASE_DATE, i));
+      const dow = parseDS(ds).getDay();
+      if (getDayHours(shop, dow).enabled) arr.push(ds);
     }
     return arr;
-  }, [shop?.workDays]);
+  }, [shop]);
 
-  // Slots de horário: filtra pelo openTime/closeTime configurado pela barbearia
+  // Slots de horário do dia selecionado (respeita o open/close DAQUELE dia da semana)
   const dayHours = useMemo(() => {
-    const open  = shop?.openTime  || "08:00";
-    const close = shop?.closeTime || "20:00";
-    return HOURS.filter(h => h >= open && h < close);
-  }, [shop?.openTime, shop?.closeTime]);
+    if (!shop) return [];
+    const dow = parseDS(selDate).getDay();
+    return getDayHourSlots(shop, dow);
+  }, [shop, selDate]);
 
   // Verifica se o cliente já tem agendamento ativo no futuro (impede agendamentos duplos).
   // Roda depois do shop+barbers carregarem; libera novo agendamento só após a data do corte
@@ -2893,14 +3417,7 @@ function PublicBooking({ slug }) {
     </div>
   );
 
-  if (loading || checkingExisting) return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ textAlign: "center" }}>
-        <Logo scale={1.2} />
-        <p style={{ color: C.fgMuted, fontSize: 13, marginTop: 20 }} className="pulse">Carregando agendamento…</p>
-      </div>
-    </div>
-  );
+  if (loading || checkingExisting) return <LoadingScreen message="Carregando agendamento" />;
 
   // Trial da barbearia expirou (ou cancelaram) — não pode receber novos agendamentos
   if (isShopBlocked(shop)) return <ShopUnavailable shopName={shop?.name} />;
@@ -4099,21 +4616,30 @@ function ShopUnavailable({ shopName }) {
 // Convenção JS p/ dia da semana: 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sáb.
 // Mantemos essa ordem no array workDays pra bater com Date.getDay() na hora de filtrar.
 const DAYS_OF_WEEK = [
-  { idx: 1, label: "Seg" },
-  { idx: 2, label: "Ter" },
-  { idx: 3, label: "Qua" },
-  { idx: 4, label: "Qui" },
-  { idx: 5, label: "Sex" },
-  { idx: 6, label: "Sáb" },
-  { idx: 0, label: "Dom" },
+  { idx: 1, label: "Seg", full: "Segunda" },
+  { idx: 2, label: "Ter", full: "Terça" },
+  { idx: 3, label: "Qua", full: "Quarta" },
+  { idx: 4, label: "Qui", full: "Quinta" },
+  { idx: 5, label: "Sex", full: "Sexta" },
+  { idx: 6, label: "Sáb", full: "Sábado" },
+  { idx: 0, label: "Dom", full: "Domingo" },
 ];
 
 function OperatingHoursCard({ shop, updateShop }) {
+  // Modo: "simple" = mesmo horário pra todos os dias / "custom" = um horário por dia
+  const initialMode = shop?.dayHours ? "custom" : "simple";
+  const [mode, setMode] = useState(initialMode);
+
+  // Estado modo SIMPLES (legacy)
   const [openTime,  setOpenTime]  = useState(shop.openTime  || "08:00");
   const [closeTime, setCloseTime] = useState(shop.closeTime || "20:00");
   const [workDays,  setWorkDays]  = useState(
     Array.isArray(shop.workDays) ? shop.workDays : [1, 2, 3, 4, 5, 6]
   );
+
+  // Estado modo PERSONALIZADO
+  const [dayHours, setDayHours] = useState(() => shop.dayHours || buildDefaultDayHours(shop));
+
   const [saving, setSaving] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
 
@@ -4122,13 +4648,25 @@ function OperatingHoursCard({ shop, updateShop }) {
     if (shop.openTime)  setOpenTime(shop.openTime);
     if (shop.closeTime) setCloseTime(shop.closeTime);
     if (Array.isArray(shop.workDays)) setWorkDays(shop.workDays);
-  }, [shop.openTime, shop.closeTime, shop.workDays]);
+    if (shop.dayHours)  { setDayHours(shop.dayHours); setMode("custom"); }
+    else                { setMode("simple"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shop.openTime, shop.closeTime, shop.workDays, shop.dayHours]);
 
-  const dirty =
-    openTime  !== (shop.openTime  || "08:00") ||
-    closeTime !== (shop.closeTime || "20:00") ||
-    JSON.stringify([...workDays].sort()) !==
-      JSON.stringify([...(Array.isArray(shop.workDays) ? shop.workDays : [1,2,3,4,5,6])].sort());
+  // Detecta se houve mudança não-salva
+  const dirty = useMemo(() => {
+    if (mode === "simple") {
+      return (
+        openTime  !== (shop.openTime  || "08:00") ||
+        closeTime !== (shop.closeTime || "20:00") ||
+        JSON.stringify([...workDays].sort()) !==
+          JSON.stringify([...(Array.isArray(shop.workDays) ? shop.workDays : [1,2,3,4,5,6])].sort()) ||
+        !!shop.dayHours  // se shop está em custom e mudou pra simple, é dirty
+      );
+    }
+    // mode === "custom"
+    return JSON.stringify(dayHours) !== JSON.stringify(shop.dayHours || {});
+  }, [mode, openTime, closeTime, workDays, dayHours, shop]);
 
   function toggleDay(idx) {
     setWorkDays(prev =>
@@ -4137,54 +4675,214 @@ function OperatingHoursCard({ shop, updateShop }) {
     setSavedOk(false);
   }
 
+  function updateDayHour(dayIdx, key, val) {
+    setDayHours(prev => ({
+      ...prev,
+      [dayIdx]: { ...prev[dayIdx], [key]: val },
+    }));
+    setSavedOk(false);
+  }
+
+  // Quando troca de modo, popula o estado novo com base no antigo (sem perder nada)
+  function switchMode(newMode) {
+    if (newMode === mode) return;
+    if (newMode === "custom") {
+      // Constrói dayHours a partir do simple atual
+      const dh = {};
+      for (let d = 0; d <= 6; d++) {
+        dh[d] = { open: openTime, close: closeTime, enabled: workDays.includes(d) };
+      }
+      setDayHours(dh);
+    }
+    setMode(newMode);
+    setSavedOk(false);
+  }
+
   async function save() {
     if (!updateShop || saving) return;
-    // Validação básica: precisa ter pelo menos 1 dia aberto e fecha > abre
-    if (workDays.length === 0) { alert("Selecione pelo menos 1 dia de funcionamento."); return; }
-    if (closeTime <= openTime) { alert("O horário de fechamento precisa ser depois do de abertura."); return; }
+
+    if (mode === "simple") {
+      if (workDays.length === 0) { alert("Selecione pelo menos 1 dia de funcionamento."); return; }
+      if (closeTime <= openTime) { alert("O horário de fechamento precisa ser depois do de abertura."); return; }
+      setSaving(true);
+      // Limpa dayHours pra voltar pro modo simples
+      const ok = await updateShop({ openTime, closeTime, workDays, dayHours: null });
+      setSaving(false);
+      if (ok) { setSavedOk(true); setTimeout(() => setSavedOk(false), 2400); }
+      return;
+    }
+
+    // mode === "custom"
+    const enabledDays = Object.entries(dayHours).filter(([_, h]) => h.enabled);
+    if (enabledDays.length === 0) { alert("Selecione pelo menos 1 dia de funcionamento."); return; }
+    for (const [d, h] of enabledDays) {
+      if (h.close <= h.open) {
+        alert(`${DAYS_OF_WEEK.find(x => x.idx === Number(d))?.full || "Dia"}: o horário de fechamento precisa ser depois do de abertura.`);
+        return;
+      }
+    }
     setSaving(true);
-    const ok = await updateShop({ openTime, closeTime, workDays });
+    // Sincroniza também os campos legacy pra clientes antigos do app continuarem funcionando.
+    // openTime/closeTime ficam como o "menor abre" e "maior fecha", workDays = dias ativos.
+    const enabled = Object.entries(dayHours).filter(([_, h]) => h.enabled);
+    const minOpen   = enabled.reduce((acc, [_, h]) => h.open  < acc ? h.open  : acc, "23:59");
+    const maxClose  = enabled.reduce((acc, [_, h]) => h.close > acc ? h.close : acc, "00:00");
+    const wd = enabled.map(([d]) => Number(d)).sort();
+    const ok = await updateShop({
+      dayHours,
+      openTime: minOpen,
+      closeTime: maxClose,
+      workDays: wd,
+    });
     setSaving(false);
     if (ok) { setSavedOk(true); setTimeout(() => setSavedOk(false), 2400); }
   }
 
   return (
     <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
-      <h3 style={{ fontSize: 14, fontWeight: 600, color: C.fg, margin: "0 0 14px" }}>
-        Horário de funcionamento
-      </h3>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-        <Inp label="Abre"  type="time" value={openTime}  onChange={e => { setOpenTime(e.target.value);  setSavedOk(false); }} />
-        <Inp label="Fecha" type="time" value={closeTime} onChange={e => { setCloseTime(e.target.value); setSavedOk(false); }} />
-      </div>
-      <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
-        Dias de funcionamento
-      </div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-        {DAYS_OF_WEEK.map(d => {
-          const on = workDays.includes(d.idx);
-          return (
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: C.fg, margin: 0 }}>
+          Horário de funcionamento
+        </h3>
+
+        {/* Toggle de modo */}
+        <div style={{ display: "flex", gap: 4, background: C.bgSunken, padding: 3, borderRadius: 8 }}>
+          {[["simple", "Igual todo dia"], ["custom", "Por dia"]].map(([v, l]) => (
             <button
-              key={d.idx}
+              key={v}
               type="button"
-              onClick={() => toggleDay(d.idx)}
+              onClick={() => switchMode(v)}
               style={{
-                padding: "7px 11px", borderRadius: 7,
-                border: "1px solid " + (on ? C.goldBright : C.border),
-                background: on ? C.goldDim : "transparent",
-                color: on ? C.goldBright : C.fgMuted,
-                fontSize: 12, fontWeight: 600, cursor: "pointer",
+                padding: "5px 11px", borderRadius: 6, border: "none",
+                background: mode === v ? C.card : "transparent",
+                color: mode === v ? C.goldBright : C.fgMuted,
+                fontSize: 11, fontWeight: 600, cursor: "pointer",
+                fontFamily: "inherit",
               }}
-              aria-pressed={on}
-            >
-              {d.label}
-            </button>
-          );
-        })}
+            >{l}</button>
+          ))}
+        </div>
       </div>
-      <div style={{ fontSize: 11, color: C.fgMuted, marginBottom: 12, lineHeight: 1.5 }}>
-        Dias desmarcados não aparecem no link de agendamento público.
-      </div>
+
+      {mode === "simple" ? (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+            <Inp label="Abre"  type="time" value={openTime}  onChange={e => { setOpenTime(e.target.value);  setSavedOk(false); }} />
+            <Inp label="Fecha" type="time" value={closeTime} onChange={e => { setCloseTime(e.target.value); setSavedOk(false); }} />
+          </div>
+          <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+            Dias de funcionamento
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+            {DAYS_OF_WEEK.map(d => {
+              const on = workDays.includes(d.idx);
+              return (
+                <button
+                  key={d.idx}
+                  type="button"
+                  onClick={() => toggleDay(d.idx)}
+                  style={{
+                    padding: "7px 11px", borderRadius: 7,
+                    border: "1px solid " + (on ? C.goldBright : C.border),
+                    background: on ? C.goldDim : "transparent",
+                    color: on ? C.goldBright : C.fgMuted,
+                    fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                  aria-pressed={on}
+                >
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: C.fgMuted, marginBottom: 12, lineHeight: 1.5 }}>
+            Dias desmarcados não aparecem no link de agendamento público.
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ fontSize: 11, color: C.fgMuted, marginBottom: 12, lineHeight: 1.5 }}>
+            Defina um horário diferente pra cada dia. Útil quando o sábado/domingo abre menos, por exemplo.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+            {DAYS_OF_WEEK.map(d => {
+              const dh = dayHours[d.idx] || { open: "08:00", close: "20:00", enabled: false };
+              return (
+                <div key={d.idx} className="day-hours-row" style={{
+                  display: "grid",
+                  gridTemplateColumns: "84px 1fr 1fr",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 12px",
+                  background: dh.enabled ? C.bgSunken : "transparent",
+                  border: "1px solid " + (dh.enabled ? C.border : "transparent"),
+                  borderRadius: 9,
+                  opacity: dh.enabled ? 1 : 0.55,
+                  transition: "background 0.15s, opacity 0.15s",
+                }}>
+                  {/* Toggle do dia + nome */}
+                  <button
+                    type="button"
+                    onClick={() => updateDayHour(d.idx, "enabled", !dh.enabled)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      padding: 0, background: "transparent", border: "none",
+                      cursor: "pointer", color: C.fg, fontFamily: "inherit",
+                      minHeight: 0,
+                    }}
+                    aria-pressed={dh.enabled}
+                  >
+                    <div style={{
+                      width: 32, height: 18, borderRadius: 9,
+                      background: dh.enabled ? C.goldBright : C.border,
+                      position: "relative", transition: "background 0.2s", flexShrink: 0,
+                    }}>
+                      <div style={{
+                        width: 14, height: 14, borderRadius: "50%", background: "#fff",
+                        position: "absolute", top: 2, left: dh.enabled ? 16 : 2,
+                        transition: "left 0.2s",
+                      }} />
+                    </div>
+                    <span style={{
+                      fontSize: 12, fontWeight: 600,
+                      color: dh.enabled ? C.fg : C.fgMuted,
+                    }}>{d.label}</span>
+                  </button>
+
+                  {/* Inputs de horário (desabilitados se dia fechado) */}
+                  <input
+                    type="time"
+                    value={dh.open}
+                    disabled={!dh.enabled}
+                    onChange={e => updateDayHour(d.idx, "open", e.target.value)}
+                    style={{
+                      padding: "7px 10px", borderRadius: 7,
+                      border: "1px solid " + C.border,
+                      background: C.bg, color: C.fg, fontSize: 13, outline: "none",
+                      fontFamily: "inherit", minHeight: 36,
+                      cursor: dh.enabled ? "text" : "not-allowed",
+                    }}
+                  />
+                  <input
+                    type="time"
+                    value={dh.close}
+                    disabled={!dh.enabled}
+                    onChange={e => updateDayHour(d.idx, "close", e.target.value)}
+                    style={{
+                      padding: "7px 10px", borderRadius: 7,
+                      border: "1px solid " + C.border,
+                      background: C.bg, color: C.fg, fontSize: 13, outline: "none",
+                      fontFamily: "inherit", minHeight: 36,
+                      cursor: dh.enabled ? "text" : "not-allowed",
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
         <Btn sm onClick={save} disabled={!dirty || saving}>
           {saving ? "Salvando..." : "Salvar horários"}
@@ -4552,14 +5250,12 @@ export default function App() {
       p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
     ]);
     try {
-      console.log("[fadein] loading barbers…");
       const { data, error } = await withTimeout(
         supabase.from("barbers").select("*").eq("shop_id", shopId).eq("active", true).order("created_at"),
         8000, "select barbers"
       );
       if (error) { console.error("[fadein] barbers error:", error); return; }
       const enriched = (data || []).map((b, i) => enrichBarber(b, i));
-      console.log("[fadein] barbers loaded:", enriched.length);
       setBarbersState(enriched);
     } catch (e) { console.error("[fadein] loadBarbers fatal:", e?.message || e); }
   }, []);
@@ -4623,7 +5319,6 @@ export default function App() {
       p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
     ]);
     try {
-      console.log("[fadein] loading appts…");
       // Janela: últimos 60 dias + próximos 30 dias (suficiente para a UI)
       const today = new Date();
       const from  = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 60).toISOString();
@@ -4639,7 +5334,6 @@ export default function App() {
       );
       if (error) { console.error("[fadein] appts error:", error); return; }
       const list = (data || []).map(r => dbRowToAppt(r, barbersList));
-      console.log("[fadein] appts loaded:", list.length);
       setAppts(list);
     } catch (e) { console.error("[fadein] loadAppts fatal:", e?.message || e); }
   }, [dbRowToAppt]);
@@ -4713,14 +5407,12 @@ export default function App() {
       p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
     ]);
     try {
-      console.log("[fadein] loading clients…");
       const { data, error } = await withTimeout(
         supabase.from("clients").select("*").eq("shop_id", shopId).order("name"),
         8000, "select clients"
       );
       if (error) { console.error("[fadein] clients error:", error); return; }
       setClients((data || []).map(dbRowToClient));
-      console.log("[fadein] clients loaded:", data?.length || 0);
     } catch (e) { console.error("[fadein] loadClients fatal:", e?.message || e); }
   }, [dbRowToClient]);
 
@@ -4830,7 +5522,6 @@ export default function App() {
       p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
     ]);
     try {
-      console.log("[fadein] loading txns…");
       const today = new Date();
       const from  = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 90).toISOString().slice(0, 10);
       const { data, error } = await withTimeout(
@@ -4839,7 +5530,6 @@ export default function App() {
       );
       if (error) { console.error("[fadein] txns error:", error); return; }
       setTxns((data || []).map(r => dbRowToTxn(r, barbersList)));
-      console.log("[fadein] txns loaded:", data?.length || 0);
     } catch (e) { console.error("[fadein] loadTxns fatal:", e?.message || e); }
   }, [dbRowToTxn]);
 
@@ -4869,7 +5559,6 @@ export default function App() {
       p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
     ]);
     try {
-      console.log("[fadein] loading services…");
       const { data, error } = await withTimeout(
         supabase.from("services").select("*").eq("shop_id", shopId).eq("active", true).order("name"),
         8000, "select services"
@@ -4882,7 +5571,6 @@ export default function App() {
         duration: parseInt(r.duration) || 30,
       }));
       setServices(mapped);
-      console.log("[fadein] services loaded:", mapped.length);
     } catch (e) { console.error("[fadein] loadServices fatal:", e?.message || e); }
   }, []);
 
@@ -4924,7 +5612,6 @@ export default function App() {
 
   // ── Carrega shop do Supabase para um user_id ─────────────────────────────
   const loadShopForUser = useCallback(async (uid) => {
-    console.log("[fadein] loadShopForUser uid=", uid);
     if (!uid) { setShop(null); return; }
 
     // Helper: race contra timeout para detectar query travada
@@ -4934,12 +5621,10 @@ export default function App() {
     ]);
 
     try {
-      console.log("[fadein] querying shops…");
       const { data, error } = await withTimeout(
         supabase.from("shops").select("*").eq("user_id", uid).maybeSingle(),
         8000, "select shops"
       );
-      console.log("[fadein] shops result:", { data, error });
       if (error) { console.error("[fadein] shop error:", error); setShop(null); return; }
       if (data) {
         setShop({
@@ -4954,22 +5639,23 @@ export default function App() {
           openTime:  data.open_time  || "08:00",
           closeTime: data.close_time || "20:00",
           workDays:  Array.isArray(data.work_days) ? data.work_days : [1, 2, 3, 4, 5, 6],
+          // Horário customizado por dia (jsonb no banco). Se existir, tem prioridade
+          // sobre openTime/closeTime — ver getDayHours().
+          dayHours:  data.day_hours && typeof data.day_hours === "object" ? data.day_hours : null,
           // Trial / assinatura
           trialEndsAt:        data.trial_ends_at || null,
           subscriptionStatus: data.subscription_status || "trial",
         });
-        console.log("[fadein] shop set:", data.name, "| plan:", data.plan || "starter");
       } else {
-        console.log("[fadein] no shop found, creating…");
         const { data: created, error: cErr } = await withTimeout(
           supabase.from("shops").insert({ user_id: uid, name: "Minha Barbearia", plan: "starter" }).select().maybeSingle(),
           8000, "insert shops"
         );
-        console.log("[fadein] create result:", { created, cErr });
         if (created) setShop({
           id: created.id, name: created.name, address: "", color: "#C9982A",
           plan: "starter", slug: slugify(created.name || ""),
           openTime: "08:00", closeTime: "20:00", workDays: [1, 2, 3, 4, 5, 6],
+          dayHours: null,
           trialEndsAt: created.trial_ends_at || null,
           subscriptionStatus: created.subscription_status || "trial",
         });
@@ -4982,21 +5668,17 @@ export default function App() {
 
   // ── Boot: verifica sessão atual + listener de auth ───────────────────────
   useEffect(() => {
-    console.log("[fadein] boot: starting…");
     let active = true;
     (async () => {
       try {
-        console.log("[fadein] getting session…");
         const { data: { session } } = await supabase.auth.getSession();
-        console.log("[fadein] session:", session?.user?.id || "(none)");
         if (!active) return;
         await loadShopForUser(session?.user?.id);
       } catch (e) { console.error("[fadein] boot error:", e); }
-      finally { if (active) { setAuthReady(true); console.log("[fadein] authReady=true"); } }
+      finally { if (active) { setAuthReady(true); } }
     })();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("[fadein] auth event:", event, session?.user?.id || "(none)");
       if (event === "PASSWORD_RECOVERY") {
         setRecoveryMode(true);
         return;
@@ -5065,7 +5747,6 @@ export default function App() {
         } catch (e) { console.error("[fadein] realtime payload error:", e); }
       })
       .subscribe((status) => {
-        console.log("[fadein] realtime channel status:", status);
       });
     return () => { supabase.removeChannel(channel); };
   }, [shop?.id, barbers, dbRowToAppt]);
@@ -5110,14 +5791,15 @@ export default function App() {
   }, [shop?.id, loadBarbers]);
 
   // Atualiza dados da loja (horário de funcionamento, etc).
-  // `patch` usa nomes camelCase (openTime, closeTime, workDays) — mapeamos pros
-  // nomes do banco (open_time, close_time, work_days) na hora do update.
+  // `patch` usa nomes camelCase (openTime, closeTime, workDays, dayHours) — mapeamos
+  // pros nomes do banco (open_time, close_time, work_days, day_hours) na hora do update.
   const updateShop = useCallback(async (patch) => {
     if (!shop?.id) return;
     const dbPatch = {};
     if (patch.openTime  !== undefined) dbPatch.open_time  = patch.openTime;
     if (patch.closeTime !== undefined) dbPatch.close_time = patch.closeTime;
     if (patch.workDays  !== undefined) dbPatch.work_days  = patch.workDays;
+    if (patch.dayHours  !== undefined) dbPatch.day_hours  = patch.dayHours; // null limpa o campo
     if (patch.name      !== undefined) dbPatch.name       = patch.name;
     if (patch.address   !== undefined) dbPatch.address    = patch.address;
     const { error } = await supabase.from("shops").update(dbPatch).eq("id", shop.id);
@@ -5137,12 +5819,7 @@ export default function App() {
   if (!authReady) return (
     <>
       <style>{GLOBAL_CSS}</style>
-      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ textAlign: "center" }}>
-          <Logo scale={1.2} />
-          <p style={{ color: C.fgMuted, fontSize: 13, marginTop: 20 }} className="pulse">Carregando...</p>
-        </div>
-      </div>
+      <LoadingScreen />
     </>
   );
 

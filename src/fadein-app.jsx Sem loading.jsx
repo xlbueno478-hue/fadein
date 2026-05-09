@@ -85,14 +85,14 @@ const GLOBAL_CSS = `
   button:active:not(:disabled) { transform: scale(0.98); }
 
   /* ────────────────────── DASHBOARD CHART RESIZING ────────────────────── */
-  /* Ocupa toda a largura do container, sem cap horizontal — preenche o espaço do app */
+  /* Ocupa toda a largura do container. Altura vem naturalmente do viewBox
+     (responsivo: mais panorâmico em desktop, mais quadrado em mobile). */
   .dashboard-chart-wrap { display: block; width: 100%; }
-  .dashboard-chart-wrap svg { width: 100%; display: block; }
-  @media (min-width: 769px) {
-    .dashboard-chart-wrap svg { min-height: 380px; max-height: 520px; }
-  }
+  .dashboard-chart-wrap svg { width: 100%; display: block; height: auto; }
+
+  /* Sparkline do hero: maior em mobile pra dar mais leitura */
   @media (max-width: 768px) {
-    .dashboard-chart-wrap svg { min-height: 240px; max-height: 320px; }
+    .hero-sparkline { height: 64px !important; }
   }
 
   /* ────────────────────── MOBILE RESPONSIVO ────────────────────── */
@@ -176,6 +176,44 @@ const GLOBAL_CSS = `
     /* Grids responsivos */
     .grid-responsive { grid-template-columns: 1fr !important; }
     .grid-responsive-2 { grid-template-columns: repeat(2, 1fr) !important; }
+
+    /* Mini-KPIs do dashboard: 3 colunas compactas no mobile pra economizar altura
+       e deixar os gráficos mais visíveis */
+    .mini-kpis-stack {
+      grid-template-columns: repeat(3, 1fr) !important;
+      grid-template-rows: auto !important;
+      gap: 6px !important;
+    }
+    .mini-kpis-stack > div {
+      flex-direction: column !important;
+      align-items: flex-start !important;
+      padding: 10px 12px !important;
+      gap: 6px !important;
+    }
+    .mini-kpis-stack > div > div:first-child {
+      width: 28px !important; height: 28px !important;
+    }
+    .mini-kpis-stack .mini-kpi-value {
+      font-size: 15px !important;
+    }
+    .mini-kpis-stack .mini-kpi-sub { display: none; } /* economiza altura */
+
+    /* Linha de horário por dia no mobile: nome em cima, horários embaixo lado a lado */
+    .day-hours-row {
+      grid-template-columns: 1fr 1fr !important;
+      grid-template-rows: auto auto !important;
+      row-gap: 8px !important;
+    }
+    .day-hours-row > button:first-child {
+      grid-column: 1 / -1 !important;
+    }
+
+    /* Hero do dashboard: faturamento gigante reduz no mobile pra não estourar */
+    .hero-revenue { font-size: 30px !important; }
+    .hero-card { padding: 18px 18px !important; }
+
+    /* Filtros do gráfico: pílulas um pouco maiores pra dedo */
+    .chart-range-tabs button { padding: 7px 13px !important; font-size: 12px !important; }
 
     /* Tabelas com scroll horizontal */
     .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -381,6 +419,58 @@ function getAvailableSlots(appts, date, barberId, duration) {
     const e = s + duration;
     return !busy.some(b => s < b.e && e > b.s);
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HORÁRIOS POR DIA — utilitários
+// ═══════════════════════════════════════════════════════════════════════════
+// Convenção: 0=Dom, 1=Seg, ..., 6=Sáb (igual Date.getDay()).
+//
+// O shop pode ter:
+//   - dayHours: { 0:{open,close,enabled}, 1:{open,close,enabled}, ... }
+//     → modo "personalizado" (cada dia tem seu horário)
+//   - openTime + closeTime + workDays (legacy / modo "simples")
+//     → mesmo horário pra todos os dias abertos
+//
+// Sempre que precisar saber o horário de um dia específico, chame
+// getDayHours(shop, dayOfWeek). Ela cuida do fallback.
+function getDayHours(shop, dayOfWeek) {
+  // Modo personalizado: dayHours existe e tem entrada pra esse dia
+  if (shop?.dayHours && shop.dayHours[dayOfWeek]) {
+    const dh = shop.dayHours[dayOfWeek];
+    return {
+      open:    dh.open    || "08:00",
+      close:   dh.close   || "20:00",
+      enabled: dh.enabled !== false,
+    };
+  }
+  // Modo simples (legacy): mesmo horário pra todos, workDays diz quais abrem
+  const workDays = Array.isArray(shop?.workDays) ? shop.workDays : [1, 2, 3, 4, 5, 6];
+  return {
+    open:    shop?.openTime  || "08:00",
+    close:   shop?.closeTime || "20:00",
+    enabled: workDays.includes(dayOfWeek),
+  };
+}
+
+// Lista de slots HH:MM disponíveis num dia da semana (respeitando o open/close daquele dia).
+function getDayHourSlots(shop, dayOfWeek) {
+  const { open, close, enabled } = getDayHours(shop, dayOfWeek);
+  if (!enabled) return [];
+  return HOURS.filter(h => h >= open && h < close);
+}
+
+// Defaults pro modo "personalizado" — usados quando o usuário ativa pela primeira vez.
+// Pega como base o openTime/closeTime/workDays atuais (ou 08-20, seg-sáb).
+function buildDefaultDayHours(shop) {
+  const baseOpen  = shop?.openTime  || "08:00";
+  const baseClose = shop?.closeTime || "20:00";
+  const workDays  = Array.isArray(shop?.workDays) ? shop.workDays : [1, 2, 3, 4, 5, 6];
+  const dh = {};
+  for (let d = 0; d <= 6; d++) {
+    dh[d] = { open: baseOpen, close: baseClose, enabled: workDays.includes(d) };
+  }
+  return dh;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -925,6 +1015,23 @@ function Dashboard({ appts, txns, services, navigate }) {
   const [hovBar, setHovBar]   = useState(null);
   const [now, setNow]         = useState(new Date());
 
+  // Detecta mobile pra ajustar viewBox do gráfico (mais quadrado em mobile,
+  // mais panorâmico em desktop). Tracked via matchMedia pra reagir a resize.
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 768px)");
+    const onChange = (e) => setIsMobile(e.matches);
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else mq.addListener(onChange); // fallback Safari antigo
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", onChange);
+      else mq.removeListener(onChange);
+    };
+  }, []);
+
   // Relógio em tempo real (atualiza a cada 30s — basta pra UX, não estressa o React)
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30000);
@@ -989,6 +1096,10 @@ function Dashboard({ appts, txns, services, navigate }) {
 
   const maxVal      = Math.max(...pts.map(p => p.val), 1);
   const totalPeriod = pts.reduce((s, p) => s + p.val, 0);
+  // Valor médio do período (usado pra linha de referência horizontal)
+  const avgVal = pts.length > 0 ? totalPeriod / pts.length : 0;
+  // Índice do ponto de pico (pra destacar)
+  const peakIdx = pts.reduce((best, p, i, arr) => p.val > arr[best].val ? i : best, 0);
 
   // Receita por serviço (top 5)
   const svcRev = useMemo(() => {
@@ -998,15 +1109,25 @@ function Dashboard({ appts, txns, services, navigate }) {
   }, [m30Txns]);
   const svcMax = svcRev.length ? svcRev[0][1] : 1;
 
-  // Area chart points (aumentado pra ocupar todo o espaço do dashboard)
-  const SVG_W = 1200, SVG_H = 380, PAD = 28;
+  // Dimensões do SVG: viewBox responsivo.
+  // Desktop: 1200×380 (panorâmico, aproveita largura) — proporção ~3.16:1
+  // Mobile:  380×340  (quase quadrado, aproveita altura disponível) — proporção ~1.12:1
+  // Como o SVG escala via width="100%" + viewBox, isso muda a proporção FINAL renderizada.
+  // Em mobile com ~340px de largura útil, altura final fica ~304px (vs ~108px do design antigo).
+  const SVG_W = isMobile ? 380 : 1200;
+  const SVG_H = isMobile ? 340 : 380;
+  const PAD_X = isMobile ? 32 : 32;     // espaço lateral pros labels do eixo Y
+  const PAD_T = isMobile ? 18 : 22;     // topo
+  const PAD_B = isMobile ? 26 : 28;     // base (labels do eixo X)
   const linePts = pts.map((p, i) => {
-    const x = PAD + (i / Math.max(pts.length - 1, 1)) * (SVG_W - PAD * 2);
-    const y = SVG_H - PAD - (p.val / maxVal) * (SVG_H - PAD * 2);
+    const x = PAD_X + (i / Math.max(pts.length - 1, 1)) * (SVG_W - PAD_X * 2);
+    const y = PAD_T + (1 - p.val / maxVal) * (SVG_H - PAD_T - PAD_B);
     return { x, y, ...p };
   });
   const linePath  = linePts.map((p, i) => (i === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ");
-  const areaPath  = linePath + " L" + (SVG_W - PAD) + " " + (SVG_H - PAD) + " L" + PAD + " " + (SVG_H - PAD) + " Z";
+  const areaPath  = linePath + " L" + (SVG_W - PAD_X) + " " + (SVG_H - PAD_B) + " L" + PAD_X + " " + (SVG_H - PAD_B) + " Z";
+  // Y da linha de média (referência horizontal)
+  const avgY = PAD_T + (1 - avgVal / maxVal) * (SVG_H - PAD_T - PAD_B);
 
   return (
     <div className="fade-in">
@@ -1025,7 +1146,7 @@ function Dashboard({ appts, txns, services, navigate }) {
       {/* HERO: Faturamento grande + 3 KPIs auxiliares */}
       <div style={{ display: "grid", gridTemplateColumns: "minmax(280px, 1.4fr) minmax(220px, 1fr)", gap: 14, marginBottom: 14 }} className="grid-responsive">
         {/* Hero card */}
-        <div style={{
+        <div className="hero-card" style={{
           background: "linear-gradient(135deg, " + C.card + " 0%, " + C.card2 + " 100%)",
           border: "1px solid " + C.borderHi, borderRadius: 16,
           padding: "24px 26px", position: "relative", overflow: "hidden",
@@ -1052,7 +1173,7 @@ function Dashboard({ appts, txns, services, navigate }) {
             Faturamento · últimos 30 dias
           </div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-            <span style={{ fontSize: 38, fontWeight: 700, color: C.goldBright, letterSpacing: -1, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+            <span className="hero-revenue" style={{ fontSize: 38, fontWeight: 700, color: C.goldBright, letterSpacing: -1, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
               {fmtMoney(revenue)}
             </span>
             <span style={{
@@ -1067,7 +1188,7 @@ function Dashboard({ appts, txns, services, navigate }) {
           </div>
 
           {/* sparkline 30d embutido */}
-          <svg width="100%" height="48" viewBox={"0 0 200 48"} preserveAspectRatio="none" style={{ display: "block" }}>
+          <svg width="100%" height="48" viewBox={"0 0 200 48"} preserveAspectRatio="none" className="hero-sparkline" style={{ display: "block" }}>
             <defs>
               <linearGradient id="sparkArea" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%"  stopColor={C.goldBright} stopOpacity="0.35" />
@@ -1098,7 +1219,7 @@ function Dashboard({ appts, txns, services, navigate }) {
         </div>
 
         {/* 3 mini-KPIs empilhados */}
-        <div style={{ display: "grid", gridTemplateRows: "1fr 1fr 1fr", gap: 8 }}>
+        <div className="mini-kpis-stack" style={{ display: "grid", gridTemplateRows: "1fr 1fr 1fr", gap: 8 }}>
           {[
             { label: "Hoje",          value: todayAppts.length, sub: "agendamentos", color: C.goldBright, icon: Ic.calendar },
             { label: "Lucro 30d",     value: fmtMoney(revenue - expenses), sub: "receita − despesas", color: revenue > expenses ? C.green : C.red, icon: Ic.trendUp },
@@ -1115,8 +1236,8 @@ function Dashboard({ appts, txns, services, navigate }) {
               }}>{k.icon}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 10, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600 }}>{k.label}</div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: k.color, lineHeight: 1.1, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{k.value}</div>
-                <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{k.sub}</div>
+                <div className="mini-kpi-value" style={{ fontSize: 18, fontWeight: 700, color: k.color, lineHeight: 1.1, marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{k.value}</div>
+                <div className="mini-kpi-sub" style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>{k.sub}</div>
               </div>
             </div>
           ))}
@@ -1164,7 +1285,7 @@ function Dashboard({ appts, txns, services, navigate }) {
               {fmtMoney(totalPeriod)}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 4, background: C.bgSunken, padding: 3, borderRadius: 9 }}>
+          <div className="chart-range-tabs" style={{ display: "flex", gap: 4, background: C.bgSunken, padding: 3, borderRadius: 9 }}>
             {[["7d","7 dias"],["30d","30 dias"],["max","90 dias"]].map(([v, l]) => (
               <button key={v} onClick={() => setRange(v)} style={{
                 padding: "5px 12px", borderRadius: 7, border: "none",
@@ -1177,60 +1298,224 @@ function Dashboard({ appts, txns, services, navigate }) {
         </div>
 
         <div className="dashboard-chart-wrap" style={{ position: "relative" }}>
-          <svg width="100%" viewBox={"0 0 " + SVG_W + " " + SVG_H} preserveAspectRatio="xMidYMid meet" style={{ display: "block", width: "100%", overflow: "visible" }}>
+          <svg
+            width="100%"
+            viewBox={"0 0 " + SVG_W + " " + SVG_H}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ display: "block", width: "100%", overflow: "visible" }}
+          >
             <defs>
+              {/* Gradient da área: 3 stops pra dar mais profundidade que o degradê comum */}
               <linearGradient id="dashArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"  stopColor={C.goldBright} stopOpacity="0.4" />
+                <stop offset="0%"   stopColor={C.goldBright} stopOpacity="0.45" />
+                <stop offset="55%"  stopColor={C.goldBright} stopOpacity="0.12" />
                 <stop offset="100%" stopColor={C.goldBright} stopOpacity="0" />
               </linearGradient>
+              {/* Gradient do traço da linha — mais brilhante no topo, mais sutil na base */}
+              <linearGradient id="dashLine" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#F0C76A" />
+                <stop offset="100%" stopColor={C.goldBright} />
+              </linearGradient>
+              {/* Glow pro pico e ponto atual */}
+              <filter id="dashGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
             </defs>
-            {/* grid lines */}
-            {[0, 0.25, 0.5, 0.75, 1].map(f => (
-              <line key={f} x1={PAD} y1={PAD + (SVG_H - PAD * 2) * f} x2={SVG_W - PAD} y2={PAD + (SVG_H - PAD * 2) * f}
-                stroke={C.border} strokeWidth="1" strokeDasharray="3 3" opacity={f === 1 ? 0.8 : 0.4} />
-            ))}
-            {/* area + line */}
+
+            {/* Grid horizontal: 4 linhas de referência (0%, 25%, 50%, 75%, 100%) */}
+            {[0, 0.25, 0.5, 0.75, 1].map(f => {
+              const y = PAD_T + f * (SVG_H - PAD_T - PAD_B);
+              return (
+                <line key={f}
+                  x1={PAD_X} y1={y} x2={SVG_W - PAD_X} y2={y}
+                  stroke={C.border} strokeWidth="1"
+                  strokeDasharray={f === 1 ? "0" : "2 4"}
+                  opacity={f === 1 ? 0.7 : 0.35}
+                />
+              );
+            })}
+
+            {/* Labels do eixo Y (3 valores: max, meio, 0) — discretos à esquerda */}
+            {[1, 0.5, 0].map(f => {
+              const y = PAD_T + (1 - f) * (SVG_H - PAD_T - PAD_B);
+              const value = maxVal * f;
+              const label = value >= 1000 ? "R$" + Math.round(value / 100) / 10 + "k" : "R$" + Math.round(value);
+              return (
+                <text key={f}
+                  x={PAD_X - 6} y={y + 3}
+                  textAnchor="end"
+                  fontSize={isMobile ? "10" : "10"}
+                  fill={C.muted}
+                  fontFamily="ui-monospace, monospace"
+                >{label}</text>
+              );
+            })}
+
+            {/* Linha de média (referência horizontal pontilhada) — só mostra se houver dado */}
+            {avgVal > 0 && (
+              <g>
+                <line
+                  x1={PAD_X} y1={avgY} x2={SVG_W - PAD_X} y2={avgY}
+                  stroke={C.fgMuted} strokeWidth="1" strokeDasharray="4 4" opacity="0.5"
+                />
+                <text
+                  x={SVG_W - PAD_X - 4} y={avgY - 5}
+                  textAnchor="end"
+                  fontSize={isMobile ? "9" : "9"}
+                  fill={C.fgMuted}
+                  fontWeight="600"
+                  letterSpacing="0.4"
+                >MÉDIA · {fmtMoney(avgVal).replace("R$\u00A0", "R$")}</text>
+              </g>
+            )}
+
+            {/* Área + linha principal */}
             {linePts.length > 1 && (
               <>
                 <path d={areaPath} fill="url(#dashArea)" />
-                <path d={linePath} fill="none" stroke={C.goldBright} strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
+                <path d={linePath}
+                  fill="none"
+                  stroke="url(#dashLine)"
+                  strokeWidth={isMobile ? "2.8" : "2.4"}
+                  strokeLinejoin="round" strokeLinecap="round"
+                />
               </>
             )}
-            {/* dots + hover */}
+
+            {/* Destaque do pico: anel sutil ao redor do maior valor */}
+            {linePts.length > 1 && pts[peakIdx]?.val > 0 && (() => {
+              const p = linePts[peakIdx];
+              return (
+                <g>
+                  <circle cx={p.x} cy={p.y} r="9" fill="none" stroke={C.goldBright} strokeWidth="1" opacity="0.35" />
+                  <circle cx={p.x} cy={p.y} r="5.5" fill={C.goldBright} filter="url(#dashGlow)" opacity="0.9" />
+                </g>
+              );
+            })()}
+
+            {/* Pontos de dados + interação */}
             {linePts.map((p, i) => {
               const isToday = p.ds === TODAY_DS;
               const isHov   = hovBar === i;
+              const isLast  = i === linePts.length - 1;
+              const isPeak  = i === peakIdx && p.val > 0;
               return (
                 <g key={p.ds} style={{ cursor: "pointer" }}
-                   onMouseEnter={() => setHovBar(i)} onMouseLeave={() => setHovBar(null)}>
-                  <rect x={p.x - 14} y={0} width={28} height={SVG_H} fill="transparent" />
-                  <circle cx={p.x} cy={p.y}
-                    r={isHov || isToday ? 5 : 3.5}
-                    fill={isToday ? C.goldBright : C.card}
-                    stroke={C.goldBright} strokeWidth={isToday ? 0 : 2}
-                  />
-                  {isHov && p.val > 0 && (
-                    <g>
-                      <rect x={p.x - 50} y={p.y - 44} width="100" height="34" rx="6" fill={C.card2} stroke={C.borderHi} />
-                      <text x={p.x} y={p.y - 28} textAnchor="middle" fontSize="9" fill={C.fgMuted}>{p.label}</text>
-                      <text x={p.x} y={p.y - 16} textAnchor="middle" fontSize="11" fill={C.goldBright} fontWeight="700">{fmtMoney(p.val)}</text>
-                    </g>
+                   onMouseEnter={() => setHovBar(i)}
+                   onMouseLeave={() => setHovBar(null)}
+                   onTouchStart={() => setHovBar(i)}>
+                  {/* área de hit maior pro toque no mobile */}
+                  <rect x={p.x - (isMobile ? 18 : 14)} y={0}
+                        width={isMobile ? 36 : 28} height={SVG_H} fill="transparent" />
+                  {!isPeak && (
+                    <circle cx={p.x} cy={p.y}
+                      r={isHov || isToday || isLast ? 4.5 : 3}
+                      fill={isToday || isLast ? C.goldBright : C.card}
+                      stroke={C.goldBright}
+                      strokeWidth={isToday || isLast ? 0 : 2}
+                    />
                   )}
+                  {/* "Agora" — pulsa no último ponto se for hoje */}
+                  {isLast && isToday && (
+                    <circle cx={p.x} cy={p.y} r="9" fill={C.goldBright} opacity="0.25"
+                      className="pulse" />
+                  )}
+                  {/* Tooltip ao hover */}
+                  {isHov && p.val > 0 && (() => {
+                    const tipW = isMobile ? 110 : 100;
+                    const tipH = 38;
+                    // mantém o tooltip dentro da viewBox
+                    const tipX = Math.max(PAD_X, Math.min(SVG_W - PAD_X - tipW, p.x - tipW / 2));
+                    const tipY = Math.max(PAD_T, p.y - tipH - 8);
+                    return (
+                      <g pointerEvents="none">
+                        <rect x={tipX} y={tipY} width={tipW} height={tipH} rx="7"
+                          fill={C.bgSunken} stroke={C.borderHi} strokeWidth="1" />
+                        <text x={tipX + tipW / 2} y={tipY + 14} textAnchor="middle"
+                          fontSize="9" fill={C.fgMuted}
+                          textTransform="uppercase" letterSpacing="0.5">{p.label}</text>
+                        <text x={tipX + tipW / 2} y={tipY + 29} textAnchor="middle"
+                          fontSize="12" fill={C.goldBright} fontWeight="700"
+                          fontFamily="ui-monospace, monospace">{fmtMoney(p.val)}</text>
+                      </g>
+                    );
+                  })()}
                 </g>
               );
             })}
-            {/* x-axis labels */}
+
+            {/* Labels do eixo X (datas) */}
             {linePts.map((p, i) => {
-              const show = range === "7d" ? true : (i % Math.ceil(linePts.length / 6) === 0 || i === linePts.length - 1);
+              // Em mobile mostra menos labels pra não ficar apertado
+              const targetCount = isMobile ? 4 : 6;
+              const show = range === "7d"
+                ? true
+                : (i % Math.ceil(linePts.length / targetCount) === 0 || i === linePts.length - 1);
               if (!show) return null;
               return (
-                <text key={p.ds + "-l"} x={p.x} y={SVG_H - 2} textAnchor="middle" fontSize="9" fill={C.fgMuted}>
-                  {p.label}
-                </text>
+                <text key={p.ds + "-l"}
+                  x={p.x} y={SVG_H - 6}
+                  textAnchor="middle"
+                  fontSize={isMobile ? "10" : "9"}
+                  fill={C.fgMuted}
+                  fontWeight="500"
+                >{p.label}</text>
               );
             })}
           </svg>
         </div>
+
+        {/* Resumo do período abaixo do chart — pico, média, comparação */}
+        {pts.length > 1 && (
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)",
+            gap: 8,
+            marginTop: 14,
+            paddingTop: 14,
+            borderTop: "1px solid " + C.border,
+          }}>
+            <div>
+              <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                Pico
+              </div>
+              <div style={{ fontSize: 14, color: C.goldBright, fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+                {fmtMoney(pts[peakIdx]?.val || 0)}
+              </div>
+              <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>
+                {pts[peakIdx]?.label || "—"}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                Média / dia
+              </div>
+              <div style={{ fontSize: 14, color: C.fg, fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+                {fmtMoney(avgVal)}
+              </div>
+              <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>
+                {pts.length} {pts.length === 1 ? "registro" : "registros"}
+              </div>
+            </div>
+            {!isMobile && (
+              <div>
+                <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                  Hoje
+                </div>
+                <div style={{ fontSize: 14, color: C.fg, fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+                  {fmtMoney(linePts[linePts.length - 1]?.val || 0)}
+                </div>
+                <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>
+                  {(linePts[linePts.length - 1]?.val || 0) >= avgVal ? "↑ acima da média" : "↓ abaixo da média"}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bottom row: Today + Top services */}
@@ -2262,27 +2547,23 @@ function LinkAgendamento({ shop, appts, setAppts, services, clients, setClients,
   const origin = (typeof window !== "undefined" && window.location.origin) ? window.location.origin : "https://fadein.app";
   const link = origin + "/agendar/" + slug;
 
-  // Dias disponíveis: respeita os dias de funcionamento configurados em Config.
-  // workDays usa convenção JS: 0=Dom, 1=Seg, ..., 6=Sáb.
-  const workDays = Array.isArray(shop.workDays) && shop.workDays.length > 0
-    ? shop.workDays
-    : [1, 2, 3, 4, 5, 6]; // fallback: seg-sáb
-
+  // Dias disponíveis: respeita os dias de funcionamento configurados em Config
+  // (suporta dayHours por dia OU openTime/closeTime+workDays legacy via getDayHours).
   const bookDates = useMemo(() => {
     const arr = [];
     for (let i = 0; i <= 30; i++) {
-      const ds = toDS(addDays(BASE_DATE, i));
-      if (workDays.includes(parseDS(ds).getDay())) arr.push(ds);
+      const ds  = toDS(addDays(BASE_DATE, i));
+      const dow = parseDS(ds).getDay();
+      if (getDayHours(shop, dow).enabled) arr.push(ds);
     }
     return arr;
-  }, [workDays]);
+  }, [shop]);
 
-  // Slots de horário: filtra HOURS pelo openTime/closeTime do shop
+  // Slots de horário do dia selecionado — respeita o open/close DAQUELE dia
   const dayHours = useMemo(() => {
-    const open  = shop.openTime  || "08:00";
-    const close = shop.closeTime || "20:00";
-    return HOURS.filter(h => h >= open && h < close);
-  }, [shop.openTime, shop.closeTime]);
+    const dow = parseDS(selDate).getDay();
+    return getDayHourSlots(shop, dow);
+  }, [shop, selDate]);
 
   const allSlotsInfo = useMemo(() => {
     if (!selBarber || !selSvc) return [];
@@ -2625,6 +2906,10 @@ function PublicBooking({ slug }) {
           openTime:  shopData.open_time  || "08:00",
           closeTime: shopData.close_time || "20:00",
           workDays:  Array.isArray(shopData.work_days) ? shopData.work_days : [1, 2, 3, 4, 5, 6],
+          // Horário customizado por dia (opcional). Se existir, tem prioridade sobre openTime/closeTime.
+          dayHours:  shopData.day_hours && typeof shopData.day_hours === "object" ? shopData.day_hours : null,
+          trialEndsAt:        shopData.trial_ends_at || null,
+          subscriptionStatus: shopData.subscription_status || "trial",
         });
 
         // 2) Carrega serviços ativos
@@ -2680,23 +2965,21 @@ function PublicBooking({ slug }) {
   }, [slug]);
 
   const bookDates = useMemo(() => {
-    const workDays = Array.isArray(shop?.workDays) && shop.workDays.length > 0
-      ? shop.workDays
-      : [1, 2, 3, 4, 5, 6];
     const arr = [];
     for (let i = 0; i <= 30; i++) {
-      const ds = toDS(addDays(BASE_DATE, i));
-      if (workDays.includes(parseDS(ds).getDay())) arr.push(ds);
+      const ds  = toDS(addDays(BASE_DATE, i));
+      const dow = parseDS(ds).getDay();
+      if (getDayHours(shop, dow).enabled) arr.push(ds);
     }
     return arr;
-  }, [shop?.workDays]);
+  }, [shop]);
 
-  // Slots de horário: filtra pelo openTime/closeTime configurado pela barbearia
+  // Slots de horário do dia selecionado (respeita o open/close DAQUELE dia da semana)
   const dayHours = useMemo(() => {
-    const open  = shop?.openTime  || "08:00";
-    const close = shop?.closeTime || "20:00";
-    return HOURS.filter(h => h >= open && h < close);
-  }, [shop?.openTime, shop?.closeTime]);
+    if (!shop) return [];
+    const dow = parseDS(selDate).getDay();
+    return getDayHourSlots(shop, dow);
+  }, [shop, selDate]);
 
   // Verifica se o cliente já tem agendamento ativo no futuro (impede agendamentos duplos).
   // Roda depois do shop+barbers carregarem; libera novo agendamento só após a data do corte
@@ -2899,6 +3182,9 @@ function PublicBooking({ slug }) {
       </div>
     </div>
   );
+
+  // Trial da barbearia expirou (ou cancelaram) — não pode receber novos agendamentos
+  if (isShopBlocked(shop)) return <ShopUnavailable shopName={shop?.name} />;
 
   // ─── Tela "já tem agendamento" ───────────────────────────────────────────
   // Mostra apenas as informações do agendamento existente. Cliente só pode
@@ -3744,25 +4030,380 @@ function Comissoes({ txns, appts, services, setServices, barbers }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════════════════════════
-// ───────── Card "Horário de funcionamento" (controlado, persiste no Supabase) ─────────
+// ═══════════════════════════════════════════════════════════════════════════
+// PWA INSTALL BANNER
+// ═══════════════════════════════════════════════════════════════════════════
+// Banner discreto que aparece no topo do app convidando o usuário a instalar
+// o PWA. Comportamento por plataforma:
+//
+// - Android Chrome/Edge: usamos o evento `beforeinstallprompt` (que o navegador
+//   dispara quando o site é instalável). Guardamos o evento e disparamos quando
+//   o usuário clica "Instalar". Resultado: prompt nativo do Chrome.
+//
+// - iOS Safari: NÃO existe API de instalação programática. Mostramos um modal
+//   com o passo-a-passo (Compartilhar → "Adicionar à Tela de Início").
+//
+// O banner some quando: o usuário fecha (lembramos via localStorage por 7 dias),
+// o app já está instalado (rodando em modo standalone), ou o usuário instala.
+
+function isStandalone() {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    window.navigator?.standalone === true // iOS Safari legacy
+  );
+}
+
+function isIOS() {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /iPad|iPhone|iPod/.test(ua) && !window.MSStream;
+}
+
+const INSTALL_DISMISS_KEY = "fadein:install-dismissed-at";
+const DISMISS_DAYS = 7;
+
+function InstallBanner() {
+  const [deferred, setDeferred]   = useState(null); // evento beforeinstallprompt salvo
+  const [showIOS, setShowIOS]     = useState(false); // modal de instruções iOS
+  const [visible, setVisible]     = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (isStandalone()) return; // já instalado
+
+    // Já dispensou recentemente?
+    try {
+      const dismissedAt = localStorage.getItem(INSTALL_DISMISS_KEY);
+      if (dismissedAt) {
+        const ageDays = (Date.now() - parseInt(dismissedAt, 10)) / (1000 * 60 * 60 * 24);
+        if (ageDays < DISMISS_DAYS) return;
+      }
+    } catch (e) { /* ignora */ }
+
+    // Android: aguarda evento beforeinstallprompt
+    const handler = (e) => {
+      e.preventDefault();
+      setDeferred(e);
+      setVisible(true);
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+
+    // iOS: não dispara o evento, mas é instalável via Safari → mostramos banner manual
+    if (isIOS()) {
+      // pequeno delay pra não competir com o login/loading inicial
+      const t = setTimeout(() => setVisible(true), 2500);
+      return () => { clearTimeout(t); window.removeEventListener("beforeinstallprompt", handler); };
+    }
+
+    // Quando instala, esconde o banner
+    const onInstalled = () => { setVisible(false); setDeferred(null); };
+    window.addEventListener("appinstalled", onInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+
+  function dismiss() {
+    setVisible(false);
+    setShowIOS(false);
+    try { localStorage.setItem(INSTALL_DISMISS_KEY, String(Date.now())); } catch (e) {}
+  }
+
+  async function install() {
+    if (isIOS()) {
+      setShowIOS(true);
+      return;
+    }
+    if (!deferred) return;
+    deferred.prompt();
+    const { outcome } = await deferred.userChoice;
+    setDeferred(null);
+    if (outcome === "accepted") setVisible(false);
+    else dismiss(); // tratou o "agora não" como dismissal
+  }
+
+  if (!visible) return null;
+
+  return (
+    <>
+      <div style={{
+        background: C.goldDim, border: "1px solid " + C.goldBright + "30", borderRadius: 10,
+        padding: "10px 14px", marginBottom: 12,
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        gap: 10, flexWrap: "wrap",
+      }}>
+        <div style={{ fontSize: 12.5, color: C.fg, fontWeight: 500, lineHeight: 1.4, flex: 1, minWidth: 200 }}>
+          📱 <b>Instale o Fadein no seu celular</b>
+          <span style={{ color: C.fgMuted, fontWeight: 400, marginLeft: 6 }}>
+            Acesso rápido, abre como app, funciona offline.
+          </span>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={install} style={{
+            background: C.goldBright, color: "#1A1A1A", border: "none",
+            padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>
+            Instalar
+          </button>
+          <button onClick={dismiss} title="Dispensar" style={{
+            background: "transparent", color: C.fgMuted, border: "1px solid " + C.border,
+            padding: "6px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>
+            Agora não
+          </button>
+        </div>
+      </div>
+
+      {/* Modal iOS: instruções passo-a-passo */}
+      {showIOS && (
+        <div className="modal-overlay" onClick={dismiss} style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 20, zIndex: 200,
+        }}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{
+            background: C.card, border: "1px solid " + C.border, borderRadius: 14,
+            padding: 24, maxWidth: 380, width: "100%",
+          }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 14px", color: C.fg, fontFamily: "Georgia, serif" }}>
+              Instalar no iPhone
+            </h3>
+            <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, color: C.fg, lineHeight: 1.85 }}>
+              <li>Toque em <b>Compartilhar</b> <span style={{ color: C.fgMuted }}>(ícone de quadrado com seta)</span> na barra inferior do Safari</li>
+              <li>Role e toque em <b>Adicionar à Tela de Início</b></li>
+              <li>Toque em <b>Adicionar</b> no canto superior direito</li>
+            </ol>
+            <p style={{ fontSize: 12, color: C.fgMuted, margin: "16px 0 18px", lineHeight: 1.5 }}>
+              Pronto — o Fadein vai aparecer como um app na sua tela inicial.
+            </p>
+            <button onClick={dismiss} style={{
+              width: "100%", background: C.goldBright, color: "#1A1A1A", border: "none",
+              padding: "11px 18px", borderRadius: 9, fontSize: 13, fontWeight: 700,
+              cursor: "pointer", fontFamily: "inherit",
+            }}>
+              Entendi
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+
+// Calcula quantos dias inteiros faltam até a data dada. Retorna 0 se já passou.
+function daysUntil(dateStr) {
+  if (!dateStr) return 0;
+  const ms = new Date(dateStr).getTime() - Date.now();
+  if (isNaN(ms) || ms <= 0) return 0;
+  return Math.ceil(ms / (1000 * 60 * 60 * 24));
+}
+
+// Determina se o shop está bloqueado (trial expirou e não virou pagante).
+// Usado pra: travar o app inteiro e exibir tela de upgrade; e
+// bloquear a página pública de agendamento (cliente final não consegue marcar).
+function isShopBlocked(shop) {
+  if (!shop) return false;
+  const status = shop.subscriptionStatus || "trial";
+  if (status === "active") return false;            // pagante
+  if (status === "expired" || status === "cancelled") return true;
+  if (status === "trial") return daysUntil(shop.trialEndsAt) === 0;
+  return false;
+}
+
+// Banner que aparece no topo do app quando faltam ≤ 7 dias de trial.
+// Não bloqueia nada — só lembra com tom amigável crescente conforme se aproxima do fim.
+function TrialBanner({ shop }) {
+  if (!shop || shop.subscriptionStatus !== "trial") return null;
+  const days = daysUntil(shop.trialEndsAt);
+  if (days > 7) return null;
+
+  const urgent = days <= 2;
+  const bg     = urgent ? C.redDim   : C.amberDim;
+  const fg     = urgent ? C.red      : C.amber;
+  const border = urgent ? C.red+"40" : C.amber+"40";
+
+  const label = days === 0 ? "Seu trial termina hoje"
+              : days === 1 ? "Seu trial termina amanhã"
+              : "Faltam " + days + " dias do seu trial";
+
+  function openWhats() {
+    const msg = encodeURIComponent("Olá! Quero assinar o Fadein.");
+    window.open("https://wa.me/?text=" + msg, "_blank");
+  }
+
+  return (
+    <div style={{
+      background: bg, border: "1px solid " + border, borderRadius: 10,
+      padding: "10px 14px", marginBottom: 16,
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      gap: 12, flexWrap: "wrap",
+    }}>
+      <div style={{ fontSize: 13, color: fg, fontWeight: 600, lineHeight: 1.4 }}>
+        ⚠ {label}.{" "}
+        <span style={{ fontWeight: 500, color: fg, opacity: 0.85 }}>
+          Assine pra continuar usando sem interrupção.
+        </span>
+      </div>
+      <button onClick={openWhats} style={{
+        background: fg, color: "#1A1A1A", border: "none",
+        padding: "7px 14px", borderRadius: 7, fontSize: 12, fontWeight: 700,
+        cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+      }}>
+        Assinar agora
+      </button>
+    </div>
+  );
+}
+
+// Tela cheia que substitui o app quando trial expirou (ou assinatura cancelada).
+// Único caminho daqui é assinar (CTA WhatsApp por enquanto — quando integrar
+// Mercado Pago, troca pro fluxo de checkout).
+function TrialExpired({ shop, onLogout }) {
+  function openWhats() {
+    const msg = encodeURIComponent("Olá! Meu trial do Fadein acabou e quero assinar.");
+    window.open("https://wa.me/?text=" + msg, "_blank");
+  }
+
+  const isExpired   = shop?.subscriptionStatus === "expired" || daysUntil(shop?.trialEndsAt) === 0;
+  const isCancelled = shop?.subscriptionStatus === "cancelled";
+
+  const title = isCancelled ? "Assinatura cancelada" : "Seu trial acabou";
+  const sub   = isCancelled
+    ? "Pra voltar a usar o Fadein, reative sua assinatura."
+    : "Esperamos que você tenha curtido esses 15 dias. Pra continuar com agenda, link de agendamento e tudo mais funcionando, é hora de assinar.";
+
+  return (
+    <div style={{
+      minHeight: "100vh", background: C.bg, color: C.fg,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "24px 20px", fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+    }}>
+      <div style={{
+        maxWidth: 440, width: "100%",
+        background: C.card, border: "1px solid " + C.border, borderRadius: 14,
+        padding: "32px 28px", textAlign: "center",
+      }}>
+        <div style={{ marginBottom: 22, display: "flex", justifyContent: "center" }}>
+          <Logo scale={1.2} />
+        </div>
+
+        <div style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 56, height: 56, borderRadius: "50%",
+          background: C.amberDim, marginBottom: 18, fontSize: 26,
+        }}>
+          {isCancelled ? "👋" : "⏰"}
+        </div>
+
+        <h1 style={{
+          fontSize: 22, fontWeight: 700, margin: "0 0 10px",
+          color: C.fg, fontFamily: "Georgia, serif",
+        }}>
+          {title}
+        </h1>
+        <p style={{ fontSize: 13.5, color: C.fgMuted, margin: "0 0 24px", lineHeight: 1.55 }}>
+          {sub}
+        </p>
+
+        <div style={{
+          background: C.bgSunken, border: "1px solid " + C.border, borderRadius: 10,
+          padding: "14px 16px", marginBottom: 20, textAlign: "left",
+        }}>
+          <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+            O que você mantém ao assinar
+          </div>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", fontSize: 13, color: C.fg, lineHeight: 1.9 }}>
+            <li>✓ Sua agenda e histórico de clientes</li>
+            <li>✓ Seu link público de agendamento</li>
+            <li>✓ Comissões e financeiro</li>
+            <li>✓ Lembretes via WhatsApp (no Premium)</li>
+          </ul>
+        </div>
+
+        <button onClick={openWhats} style={{
+          width: "100%", background: C.goldBright, color: "#1A1A1A", border: "none",
+          padding: "13px 20px", borderRadius: 10, fontSize: 14, fontWeight: 700,
+          cursor: "pointer", fontFamily: "inherit", marginBottom: 10,
+        }}>
+          Assinar agora
+        </button>
+
+        <button onClick={onLogout} style={{
+          background: "transparent", color: C.fgMuted, border: "none",
+          padding: "9px 14px", fontSize: 12, fontWeight: 500,
+          cursor: "pointer", fontFamily: "inherit",
+        }}>
+          Sair da conta
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Mensagem que substitui a página pública de agendamento se a barbearia
+// está com trial expirado. Cliente final vê algo amigável em vez de UI quebrada.
+function ShopUnavailable({ shopName }) {
+  return (
+    <div style={{
+      minHeight: "100vh", background: C.bg, color: C.fg,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      padding: "24px 20px", fontFamily: "system-ui, -apple-system, 'Segoe UI', sans-serif",
+    }}>
+      <div style={{ maxWidth: 380, textAlign: "center" }}>
+        <div style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 56, height: 56, borderRadius: "50%",
+          background: C.bgSunken, border: "1px solid " + C.border,
+          marginBottom: 18, fontSize: 24,
+        }}>
+          🚪
+        </div>
+        <h1 style={{ fontSize: 19, fontWeight: 700, margin: "0 0 10px", color: C.fg, fontFamily: "Georgia, serif" }}>
+          Agendamento indisponível
+        </h1>
+        <p style={{ fontSize: 13, color: C.fgMuted, margin: 0, lineHeight: 1.6 }}>
+          {shopName ? <><b>{shopName}</b> não está</> : "Esta barbearia não está"}{" "}
+          recebendo agendamentos online no momento. Entre em contato direto pra marcar seu horário.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
 // Convenção JS p/ dia da semana: 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sáb.
 // Mantemos essa ordem no array workDays pra bater com Date.getDay() na hora de filtrar.
 const DAYS_OF_WEEK = [
-  { idx: 1, label: "Seg" },
-  { idx: 2, label: "Ter" },
-  { idx: 3, label: "Qua" },
-  { idx: 4, label: "Qui" },
-  { idx: 5, label: "Sex" },
-  { idx: 6, label: "Sáb" },
-  { idx: 0, label: "Dom" },
+  { idx: 1, label: "Seg", full: "Segunda" },
+  { idx: 2, label: "Ter", full: "Terça" },
+  { idx: 3, label: "Qua", full: "Quarta" },
+  { idx: 4, label: "Qui", full: "Quinta" },
+  { idx: 5, label: "Sex", full: "Sexta" },
+  { idx: 6, label: "Sáb", full: "Sábado" },
+  { idx: 0, label: "Dom", full: "Domingo" },
 ];
 
 function OperatingHoursCard({ shop, updateShop }) {
+  // Modo: "simple" = mesmo horário pra todos os dias / "custom" = um horário por dia
+  const initialMode = shop?.dayHours ? "custom" : "simple";
+  const [mode, setMode] = useState(initialMode);
+
+  // Estado modo SIMPLES (legacy)
   const [openTime,  setOpenTime]  = useState(shop.openTime  || "08:00");
   const [closeTime, setCloseTime] = useState(shop.closeTime || "20:00");
   const [workDays,  setWorkDays]  = useState(
     Array.isArray(shop.workDays) ? shop.workDays : [1, 2, 3, 4, 5, 6]
   );
+
+  // Estado modo PERSONALIZADO
+  const [dayHours, setDayHours] = useState(() => shop.dayHours || buildDefaultDayHours(shop));
+
   const [saving, setSaving] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
 
@@ -3771,13 +4412,25 @@ function OperatingHoursCard({ shop, updateShop }) {
     if (shop.openTime)  setOpenTime(shop.openTime);
     if (shop.closeTime) setCloseTime(shop.closeTime);
     if (Array.isArray(shop.workDays)) setWorkDays(shop.workDays);
-  }, [shop.openTime, shop.closeTime, shop.workDays]);
+    if (shop.dayHours)  { setDayHours(shop.dayHours); setMode("custom"); }
+    else                { setMode("simple"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shop.openTime, shop.closeTime, shop.workDays, shop.dayHours]);
 
-  const dirty =
-    openTime  !== (shop.openTime  || "08:00") ||
-    closeTime !== (shop.closeTime || "20:00") ||
-    JSON.stringify([...workDays].sort()) !==
-      JSON.stringify([...(Array.isArray(shop.workDays) ? shop.workDays : [1,2,3,4,5,6])].sort());
+  // Detecta se houve mudança não-salva
+  const dirty = useMemo(() => {
+    if (mode === "simple") {
+      return (
+        openTime  !== (shop.openTime  || "08:00") ||
+        closeTime !== (shop.closeTime || "20:00") ||
+        JSON.stringify([...workDays].sort()) !==
+          JSON.stringify([...(Array.isArray(shop.workDays) ? shop.workDays : [1,2,3,4,5,6])].sort()) ||
+        !!shop.dayHours  // se shop está em custom e mudou pra simple, é dirty
+      );
+    }
+    // mode === "custom"
+    return JSON.stringify(dayHours) !== JSON.stringify(shop.dayHours || {});
+  }, [mode, openTime, closeTime, workDays, dayHours, shop]);
 
   function toggleDay(idx) {
     setWorkDays(prev =>
@@ -3786,54 +4439,214 @@ function OperatingHoursCard({ shop, updateShop }) {
     setSavedOk(false);
   }
 
+  function updateDayHour(dayIdx, key, val) {
+    setDayHours(prev => ({
+      ...prev,
+      [dayIdx]: { ...prev[dayIdx], [key]: val },
+    }));
+    setSavedOk(false);
+  }
+
+  // Quando troca de modo, popula o estado novo com base no antigo (sem perder nada)
+  function switchMode(newMode) {
+    if (newMode === mode) return;
+    if (newMode === "custom") {
+      // Constrói dayHours a partir do simple atual
+      const dh = {};
+      for (let d = 0; d <= 6; d++) {
+        dh[d] = { open: openTime, close: closeTime, enabled: workDays.includes(d) };
+      }
+      setDayHours(dh);
+    }
+    setMode(newMode);
+    setSavedOk(false);
+  }
+
   async function save() {
     if (!updateShop || saving) return;
-    // Validação básica: precisa ter pelo menos 1 dia aberto e fecha > abre
-    if (workDays.length === 0) { alert("Selecione pelo menos 1 dia de funcionamento."); return; }
-    if (closeTime <= openTime) { alert("O horário de fechamento precisa ser depois do de abertura."); return; }
+
+    if (mode === "simple") {
+      if (workDays.length === 0) { alert("Selecione pelo menos 1 dia de funcionamento."); return; }
+      if (closeTime <= openTime) { alert("O horário de fechamento precisa ser depois do de abertura."); return; }
+      setSaving(true);
+      // Limpa dayHours pra voltar pro modo simples
+      const ok = await updateShop({ openTime, closeTime, workDays, dayHours: null });
+      setSaving(false);
+      if (ok) { setSavedOk(true); setTimeout(() => setSavedOk(false), 2400); }
+      return;
+    }
+
+    // mode === "custom"
+    const enabledDays = Object.entries(dayHours).filter(([_, h]) => h.enabled);
+    if (enabledDays.length === 0) { alert("Selecione pelo menos 1 dia de funcionamento."); return; }
+    for (const [d, h] of enabledDays) {
+      if (h.close <= h.open) {
+        alert(`${DAYS_OF_WEEK.find(x => x.idx === Number(d))?.full || "Dia"}: o horário de fechamento precisa ser depois do de abertura.`);
+        return;
+      }
+    }
     setSaving(true);
-    const ok = await updateShop({ openTime, closeTime, workDays });
+    // Sincroniza também os campos legacy pra clientes antigos do app continuarem funcionando.
+    // openTime/closeTime ficam como o "menor abre" e "maior fecha", workDays = dias ativos.
+    const enabled = Object.entries(dayHours).filter(([_, h]) => h.enabled);
+    const minOpen   = enabled.reduce((acc, [_, h]) => h.open  < acc ? h.open  : acc, "23:59");
+    const maxClose  = enabled.reduce((acc, [_, h]) => h.close > acc ? h.close : acc, "00:00");
+    const wd = enabled.map(([d]) => Number(d)).sort();
+    const ok = await updateShop({
+      dayHours,
+      openTime: minOpen,
+      closeTime: maxClose,
+      workDays: wd,
+    });
     setSaving(false);
     if (ok) { setSavedOk(true); setTimeout(() => setSavedOk(false), 2400); }
   }
 
   return (
     <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
-      <h3 style={{ fontSize: 14, fontWeight: 600, color: C.fg, margin: "0 0 14px" }}>
-        Horário de funcionamento
-      </h3>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-        <Inp label="Abre"  type="time" value={openTime}  onChange={e => { setOpenTime(e.target.value);  setSavedOk(false); }} />
-        <Inp label="Fecha" type="time" value={closeTime} onChange={e => { setCloseTime(e.target.value); setSavedOk(false); }} />
-      </div>
-      <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
-        Dias de funcionamento
-      </div>
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-        {DAYS_OF_WEEK.map(d => {
-          const on = workDays.includes(d.idx);
-          return (
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: C.fg, margin: 0 }}>
+          Horário de funcionamento
+        </h3>
+
+        {/* Toggle de modo */}
+        <div style={{ display: "flex", gap: 4, background: C.bgSunken, padding: 3, borderRadius: 8 }}>
+          {[["simple", "Igual todo dia"], ["custom", "Por dia"]].map(([v, l]) => (
             <button
-              key={d.idx}
+              key={v}
               type="button"
-              onClick={() => toggleDay(d.idx)}
+              onClick={() => switchMode(v)}
               style={{
-                padding: "7px 11px", borderRadius: 7,
-                border: "1px solid " + (on ? C.goldBright : C.border),
-                background: on ? C.goldDim : "transparent",
-                color: on ? C.goldBright : C.fgMuted,
-                fontSize: 12, fontWeight: 600, cursor: "pointer",
+                padding: "5px 11px", borderRadius: 6, border: "none",
+                background: mode === v ? C.card : "transparent",
+                color: mode === v ? C.goldBright : C.fgMuted,
+                fontSize: 11, fontWeight: 600, cursor: "pointer",
+                fontFamily: "inherit",
               }}
-              aria-pressed={on}
-            >
-              {d.label}
-            </button>
-          );
-        })}
+            >{l}</button>
+          ))}
+        </div>
       </div>
-      <div style={{ fontSize: 11, color: C.fgMuted, marginBottom: 12, lineHeight: 1.5 }}>
-        Dias desmarcados não aparecem no link de agendamento público.
-      </div>
+
+      {mode === "simple" ? (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+            <Inp label="Abre"  type="time" value={openTime}  onChange={e => { setOpenTime(e.target.value);  setSavedOk(false); }} />
+            <Inp label="Fecha" type="time" value={closeTime} onChange={e => { setCloseTime(e.target.value); setSavedOk(false); }} />
+          </div>
+          <div style={{ fontSize: 11, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+            Dias de funcionamento
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+            {DAYS_OF_WEEK.map(d => {
+              const on = workDays.includes(d.idx);
+              return (
+                <button
+                  key={d.idx}
+                  type="button"
+                  onClick={() => toggleDay(d.idx)}
+                  style={{
+                    padding: "7px 11px", borderRadius: 7,
+                    border: "1px solid " + (on ? C.goldBright : C.border),
+                    background: on ? C.goldDim : "transparent",
+                    color: on ? C.goldBright : C.fgMuted,
+                    fontSize: 12, fontWeight: 600, cursor: "pointer",
+                    fontFamily: "inherit",
+                  }}
+                  aria-pressed={on}
+                >
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: C.fgMuted, marginBottom: 12, lineHeight: 1.5 }}>
+            Dias desmarcados não aparecem no link de agendamento público.
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ fontSize: 11, color: C.fgMuted, marginBottom: 12, lineHeight: 1.5 }}>
+            Defina um horário diferente pra cada dia. Útil quando o sábado/domingo abre menos, por exemplo.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+            {DAYS_OF_WEEK.map(d => {
+              const dh = dayHours[d.idx] || { open: "08:00", close: "20:00", enabled: false };
+              return (
+                <div key={d.idx} className="day-hours-row" style={{
+                  display: "grid",
+                  gridTemplateColumns: "84px 1fr 1fr",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "10px 12px",
+                  background: dh.enabled ? C.bgSunken : "transparent",
+                  border: "1px solid " + (dh.enabled ? C.border : "transparent"),
+                  borderRadius: 9,
+                  opacity: dh.enabled ? 1 : 0.55,
+                  transition: "background 0.15s, opacity 0.15s",
+                }}>
+                  {/* Toggle do dia + nome */}
+                  <button
+                    type="button"
+                    onClick={() => updateDayHour(d.idx, "enabled", !dh.enabled)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      padding: 0, background: "transparent", border: "none",
+                      cursor: "pointer", color: C.fg, fontFamily: "inherit",
+                      minHeight: 0,
+                    }}
+                    aria-pressed={dh.enabled}
+                  >
+                    <div style={{
+                      width: 32, height: 18, borderRadius: 9,
+                      background: dh.enabled ? C.goldBright : C.border,
+                      position: "relative", transition: "background 0.2s", flexShrink: 0,
+                    }}>
+                      <div style={{
+                        width: 14, height: 14, borderRadius: "50%", background: "#fff",
+                        position: "absolute", top: 2, left: dh.enabled ? 16 : 2,
+                        transition: "left 0.2s",
+                      }} />
+                    </div>
+                    <span style={{
+                      fontSize: 12, fontWeight: 600,
+                      color: dh.enabled ? C.fg : C.fgMuted,
+                    }}>{d.label}</span>
+                  </button>
+
+                  {/* Inputs de horário (desabilitados se dia fechado) */}
+                  <input
+                    type="time"
+                    value={dh.open}
+                    disabled={!dh.enabled}
+                    onChange={e => updateDayHour(d.idx, "open", e.target.value)}
+                    style={{
+                      padding: "7px 10px", borderRadius: 7,
+                      border: "1px solid " + C.border,
+                      background: C.bg, color: C.fg, fontSize: 13, outline: "none",
+                      fontFamily: "inherit", minHeight: 36,
+                      cursor: dh.enabled ? "text" : "not-allowed",
+                    }}
+                  />
+                  <input
+                    type="time"
+                    value={dh.close}
+                    disabled={!dh.enabled}
+                    onChange={e => updateDayHour(d.idx, "close", e.target.value)}
+                    style={{
+                      padding: "7px 10px", borderRadius: 7,
+                      border: "1px solid " + C.border,
+                      background: C.bg, color: C.fg, fontSize: 13, outline: "none",
+                      fontFamily: "inherit", minHeight: 36,
+                      cursor: dh.enabled ? "text" : "not-allowed",
+                    }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
         <Btn sm onClick={save} disabled={!dirty || saving}>
           {saving ? "Salvando..." : "Salvar horários"}
@@ -3946,6 +4759,33 @@ function Config({ shop, services, setServices, onLogout, barbers, addBarber, upd
               </Btn>
             )}
           </div>
+
+          {/* Status do trial / assinatura — barra dentro do card */}
+          {shop.subscriptionStatus === "trial" && (() => {
+            const days = daysUntil(shop.trialEndsAt);
+            const urgent = days <= 7;
+            return (
+              <div style={{
+                marginTop: 16, paddingTop: 14, borderTop: "1px solid " + C.border,
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+              }}>
+                <div style={{ fontSize: 12, color: urgent ? C.amber : C.fgMuted, lineHeight: 1.5 }}>
+                  <b>Período de teste:</b>{" "}
+                  {days === 0 ? "termina hoje"
+                    : days === 1 ? "termina amanhã"
+                    : days + " dias restantes"}
+                </div>
+              </div>
+            );
+          })()}
+          {shop.subscriptionStatus === "active" && (
+            <div style={{
+              marginTop: 16, paddingTop: 14, borderTop: "1px solid " + C.border,
+              fontSize: 12, color: C.green,
+            }}>
+              ✓ Assinatura ativa
+            </div>
+          )}
         </div>
 
         <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
@@ -4576,6 +5416,12 @@ export default function App() {
           openTime:  data.open_time  || "08:00",
           closeTime: data.close_time || "20:00",
           workDays:  Array.isArray(data.work_days) ? data.work_days : [1, 2, 3, 4, 5, 6],
+          // Horário customizado por dia (jsonb no banco). Se existir, tem prioridade
+          // sobre openTime/closeTime — ver getDayHours().
+          dayHours:  data.day_hours && typeof data.day_hours === "object" ? data.day_hours : null,
+          // Trial / assinatura
+          trialEndsAt:        data.trial_ends_at || null,
+          subscriptionStatus: data.subscription_status || "trial",
         });
         console.log("[fadein] shop set:", data.name, "| plan:", data.plan || "starter");
       } else {
@@ -4589,6 +5435,9 @@ export default function App() {
           id: created.id, name: created.name, address: "", color: "#C9982A",
           plan: "starter", slug: slugify(created.name || ""),
           openTime: "08:00", closeTime: "20:00", workDays: [1, 2, 3, 4, 5, 6],
+          dayHours: null,
+          trialEndsAt: created.trial_ends_at || null,
+          subscriptionStatus: created.subscription_status || "trial",
         });
       }
     } catch (e) {
@@ -4727,14 +5576,15 @@ export default function App() {
   }, [shop?.id, loadBarbers]);
 
   // Atualiza dados da loja (horário de funcionamento, etc).
-  // `patch` usa nomes camelCase (openTime, closeTime, workDays) — mapeamos pros
-  // nomes do banco (open_time, close_time, work_days) na hora do update.
+  // `patch` usa nomes camelCase (openTime, closeTime, workDays, dayHours) — mapeamos
+  // pros nomes do banco (open_time, close_time, work_days, day_hours) na hora do update.
   const updateShop = useCallback(async (patch) => {
     if (!shop?.id) return;
     const dbPatch = {};
     if (patch.openTime  !== undefined) dbPatch.open_time  = patch.openTime;
     if (patch.closeTime !== undefined) dbPatch.close_time = patch.closeTime;
     if (patch.workDays  !== undefined) dbPatch.work_days  = patch.workDays;
+    if (patch.dayHours  !== undefined) dbPatch.day_hours  = patch.dayHours; // null limpa o campo
     if (patch.name      !== undefined) dbPatch.name       = patch.name;
     if (patch.address   !== undefined) dbPatch.address    = patch.address;
     const { error } = await supabase.from("shops").update(dbPatch).eq("id", shop.id);
@@ -4774,6 +5624,14 @@ export default function App() {
     <>
       <style>{GLOBAL_CSS}</style>
       <Login onLogin={() => {}} />
+    </>
+  );
+
+  // Trial venceu (ou assinatura cancelada): toma a tela inteira, sem acesso ao app.
+  if (isShopBlocked(shop)) return (
+    <>
+      <style>{GLOBAL_CSS}</style>
+      <TrialExpired shop={shop} onLogout={() => supabase.auth.signOut()} />
     </>
   );
 
@@ -4882,6 +5740,8 @@ export default function App() {
       </div>
 
       <main className="app-main">
+        <InstallBanner />
+        <TrialBanner shop={shop} />
         {page === "dashboard"  && <Dashboard  appts={appts} txns={txns} services={services} navigate={setPage} />}
         {page === "agenda"     && <Agenda     appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} setTxns={setTxns} barbers={barbers} createAppt={createAppt} updateAppt={updateAppt} cancelAppt={cancelAppt} upsertClientFromAppt={upsertClientFromAppt} createTxn={createTxn} />}
         {page === "financeiro" && (hasFeature(shop.plan, "financeiro")
