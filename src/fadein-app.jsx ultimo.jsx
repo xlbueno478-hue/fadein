@@ -8,6 +8,36 @@ const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
+// ═══════════════════════════════════════════════════════════════════════════
+// PROGRAMA DE INDICAÇÃO ("Indique e ganhe 1 mês grátis")
+// ═══════════════════════════════════════════════════════════════════════════
+// Quando alguém chega no app via link de indicação (`?ref=<uuid_do_indicador>`),
+// guardamos o uid no localStorage. Quando essa pessoa cria a barbearia (insert
+// em `shops`), gravamos `referred_by` apontando pra quem indicou. Daí em diante:
+//   - O indicador vê o contador de indicações dele crescer no Config.
+//   - O indicado ganha um banner "50% off no 1º mês" no login (psicológico).
+//   - O processamento financeiro (estender trial / aplicar desconto) é manual
+//     no painel admin do Supabase, olhando a coluna `referred_by`.
+//
+// Roda só na primeira render do módulo. Limpa o `?ref=` da URL pra não duplicar
+// captura se o usuário recarregar depois de logar.
+const REFERRAL_KEY = "fadein:referredBy";
+(function captureReferralOnLoad() {
+  if (typeof window === "undefined") return;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    // Aceita só formato UUID v4 — protege contra junk/SQL injection no link
+    if (ref && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref)) {
+      localStorage.setItem(REFERRAL_KEY, ref);
+      params.delete("ref");
+      const qs = params.toString();
+      const clean = window.location.pathname + (qs ? "?" + qs : "") + window.location.hash;
+      window.history.replaceState({}, "", clean);
+    }
+  } catch (e) { /* localStorage indisponível em modo privado: ignora silenciosamente */ }
+})();
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DESIGN SYSTEM
@@ -61,12 +91,106 @@ const GLOBAL_CSS = `
   ::selection { background: ${C.goldBright}; color: #0A0908; }
 
   /* Animations */
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  /* fadeIn: curva expo-out (mesma do loading) pra dar peso premium na troca de
+     tela. translateY um pouco maior (8px) e duração 0.35s deixam a transição
+     legível sem virar lentidão. O "both" mantém o estado inicial antes de
+     rodar, evitando o flash de conteúdo já posicionado. */
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
-  .fade-in { animation: fadeIn 0.2s ease-out; }
+  .fade-in { animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
   .slide-in { animation: slideIn 0.25s ease-out; }
   .pulse { animation: pulse 2s ease-in-out infinite; }
+
+  /* Respeita reduce-motion também na transição de tela */
+  @media (prefers-reduced-motion: reduce) {
+    .fade-in, .slide-in { animation: none; }
+  }
+
+  /* ────────────────────── LOADING SCREEN ────────────────────── */
+  /* Identidade Fadein viva. Animação staircase: cada barrinha sobe na sua vez
+     (degrau 1 → degrau 2 → ... → degrau 5), fica em pé, e desaparece na mesma
+     ordem antes do ciclo recomeçar. Mais minimal e premium que um wave clássico.
+     Ciclo total de 4.4s, easing expo-out na subida pra dar peso refinado. */
+  .loading-screen {
+    min-height: 100vh;
+    background:
+      radial-gradient(ellipse 65% 55% at 50% 38%, ${C.goldFaint} 0%, transparent 70%),
+      ${C.bg};
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 26px; padding: 24px;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  .loading-bars {
+    display: flex; align-items: flex-end; gap: 6px;
+    height: 60px;
+  }
+  .loading-bars span {
+    display: block; width: 7px; height: 0;
+    background: linear-gradient(180deg, #F0C76A 0%, ${C.gold} 100%);
+    border-radius: 2px;
+    opacity: 0;
+    transform-origin: bottom;
+    animation: barStaircase 4.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  }
+  /* Cada barra reproduz a curva crescente do logo (alturas 22, 30, 38, 48, 60).
+     O delay incremental cria o efeito de "degrau subindo um após o outro". */
+  .loading-bars span:nth-child(1) { animation-delay: 0.0s;  --peak: 22px; }
+  .loading-bars span:nth-child(2) { animation-delay: 0.18s; --peak: 30px; }
+  .loading-bars span:nth-child(3) { animation-delay: 0.36s; --peak: 38px; }
+  .loading-bars span:nth-child(4) { animation-delay: 0.54s; --peak: 48px; }
+  .loading-bars span:nth-child(5) { animation-delay: 0.72s; --peak: 60px; }
+  @keyframes barStaircase {
+    /* invisível esperando a vez */
+    0%   { height: 0;            opacity: 0; }
+    /* sobe (4% do ciclo = ~180ms) */
+    4%   { height: var(--peak);  opacity: 1; }
+    /* fica em pé enquanto as outras sobem e o logo é "construído" */
+    65%  { height: var(--peak);  opacity: 1; }
+    /* fade-out elegante mantendo a altura — não despenca, dissolve */
+    78%  { height: var(--peak);  opacity: 0; }
+    /* repouso até o próximo ciclo começar */
+    100% { height: 0;            opacity: 0; }
+  }
+
+  .loading-brand {
+    font-size: 22px; font-weight: 600; letter-spacing: 6px;
+    color: ${C.fg};
+    animation: loadingFadeUp 0.9s cubic-bezier(0.16, 1, 0.3, 1) 1.1s both;
+  }
+  .loading-brand b {
+    color: ${C.goldBright}; font-weight: 600;
+    margin-left: 5px;
+  }
+  @keyframes loadingFadeUp {
+    from { opacity: 0; transform: translateY(6px); letter-spacing: 3px; }
+    to   { opacity: 1; transform: translateY(0);   letter-spacing: 6px; }
+  }
+
+  /* Linha-base sutil sob o logo (separador horizontal premium) */
+  .loading-rule {
+    width: 80px; height: 1px;
+    background: linear-gradient(90deg, transparent, ${C.borderHi}, transparent);
+    animation: loadingFadeUp 0.9s ease-out 1.3s both;
+  }
+
+  .loading-message {
+    font-size: 9px; font-weight: 500;
+    color: ${C.muted};
+    letter-spacing: 4px; text-transform: uppercase;
+    margin: 0;
+    animation: loadingFadeUp 0.9s ease-out 1.5s both;
+  }
+
+  /* Respeita "reduce motion": mostra logo final estático, sem ciclo. */
+  @media (prefers-reduced-motion: reduce) {
+    .loading-bars span {
+      animation: none;
+      height: var(--peak, 50px);
+      opacity: 1;
+    }
+  }
 
   /* Inputs sem highlight default azul */
   input:focus, select:focus, textarea:focus { outline: none; border-color: ${C.goldBright} !important; }
@@ -248,53 +372,31 @@ function agoLabel(ds) {
 // ═══════════════════════════════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════════════
-const SHOPS = [
-  { id: 1, name: "Barbearia do João",  address: "Rua das Flores, 123 — Viamão/RS",   password: "12457",        color: "#C9982A" },
-  { id: 2, name: "BarberShop Elite",   address: "Av. Borges de Medeiros, 800 — POA", password: "barbershop64", color: "#5A9BE2" },
-  { id: 3, name: "Corte & Estilo",     address: "Rua Independência, 44 — Canoas",    password: "corte2026",    color: "#5BAF6F" },
-];
-
-const BARBERS = [
-  { id: 1, name: "Carlos", avatar: "C", color: "#E0B445", commission: 50 }, // 50% pra ele, 50% pra casa
-  { id: 2, name: "Rafael", avatar: "R", color: "#5A9BE2", commission: 45 },
-  { id: 3, name: "Diego",  avatar: "D", color: "#5BAF6F", commission: 40 },
-];
-
-const SERVICES_INIT = [
-  { id: 1, name: "Corte",         price: 45, duration: 30 },
-  { id: 2, name: "Barba",         price: 30, duration: 20 },
-  { id: 3, name: "Corte + Barba", price: 65, duration: 45 },
-  { id: 4, name: "Degradê",       price: 50, duration: 35 },
-  { id: 5, name: "Sobrancelha",   price: 15, duration: 10 },
-  { id: 6, name: "Pigmentação",   price: 80, duration: 40 },
-];
-
+// Slots de horário possíveis no app — 8h às 20h em intervalos de 30min.
+// O horário REAL de funcionamento de cada barbearia é configurado em Settings
+// (campos open_time / close_time / day_hours) e filtra esse array via getDayHourSlots().
 const HOURS = [];
 for (let h = 8; h < 20; h++) {
   HOURS.push(pad(h) + ":00");
   HOURS.push(pad(h) + ":30");
 }
 
-const CLIENTS_INIT = [
-  { id: 1, name: "João Silva",     phone: "(51) 99123-4567", lastVisit: "2026-04-15", visits: 12, fav: 1, notes: "Degradê baixo, máquina 1" },
-  { id: 2, name: "Pedro Santos",   phone: "(51) 99234-5678", lastVisit: "2026-04-20", visits: 8,  fav: 2, notes: "Barba completa, óleo" },
-  { id: 3, name: "Lucas Oliveira", phone: "(51) 99345-6789", lastVisit: "2026-04-10", visits: 23, fav: 1, notes: "Corte social, sem máquina" },
-  { id: 4, name: "Marcos Lima",    phone: "(51) 99456-7890", lastVisit: "2026-03-28", visits: 5,  fav: 3, notes: "Pigmentação + corte" },
-  { id: 5, name: "André Costa",    phone: "(51) 99567-8901", lastVisit: "2026-04-22", visits: 15, fav: 1, notes: "Fade médio" },
-  { id: 6, name: "Bruno Ferreira", phone: "(51) 99678-9012", lastVisit: "2026-04-25", visits: 31, fav: 2, notes: "VIP - combo sempre" },
-  { id: 7, name: "Thiago Rocha",   phone: "(51) 99789-0123", lastVisit: "2026-02-10", visits: 3,  fav: 1, notes: "Novo cliente" },
-  { id: 8, name: "Felipe Alves",   phone: "(51) 99890-1234", lastVisit: "2026-04-27", visits: 19, fav: 3, notes: "Degradê alto, navalhado" },
-];
-
 // ═══════════════════════════════════════════════════════════════════════════
 // PLANOS (gating de funcionalidades)
 // ═══════════════════════════════════════════════════════════════════════════
+// Cada plano tem uma `checkoutUrl` apontando pra um link de assinatura no
+// Asaas. O cliente clica em "Fazer upgrade" → cai no checkout do Asaas →
+// escolhe PIX/boleto/cartão → assinatura recorrente fica ativa lá. Quando
+// alguém pagar, o admin atualiza manualmente `subscription_status='active'`
+// e `plan='pro'/'premium'` no Supabase (Fase 1 — manual). Numa Fase 2 isso
+// vira webhook automático.
 const PLANS = {
   starter: {
     id: "starter",
     name: "Starter",
     price: 49,
     maxBarbers: 1,
+    checkoutUrl: null, // plano base, sem upgrade
     features: { agenda: true, linkPublico: true, clientes: true, dashboardBasico: true,
                 financeiro: false, comissoes: false, dashboardAvancado: false,
                 multiUnidade: false, whatsappAuto: false, relatorios: false, whiteLabel: false },
@@ -304,15 +406,17 @@ const PLANS = {
     name: "Pro",
     price: 99,
     maxBarbers: 3,
+    checkoutUrl: "https://www.asaas.com/c/i8tqwnqjsf4q50ym",
     features: { agenda: true, linkPublico: true, clientes: true, dashboardBasico: true,
                 financeiro: true, comissoes: true, dashboardAvancado: true,
-                multiUnidade: false, whatsappAuto: true, relatorios: false, whiteLabel: false },
+                multiUnidade: false, whatsappAuto: true, relatorios: true, whiteLabel: false },
   },
   premium: {
     id: "premium",
     name: "Premium",
     price: 179,
     maxBarbers: Infinity,
+    checkoutUrl: "https://www.asaas.com/c/gp7spwhio9ud6o5g",
     features: { agenda: true, linkPublico: true, clientes: true, dashboardBasico: true,
                 financeiro: true, comissoes: true, dashboardAvancado: true,
                 multiUnidade: true, whatsappAuto: true, relatorios: true, whiteLabel: true },
@@ -323,86 +427,26 @@ function hasFeature(plan, key) {
   return !!p.features[key];
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SEED DATA
-// ═══════════════════════════════════════════════════════════════════════════
-function seedAppointments(services) {
-  const list = [];
-  let id = 1;
-  const cn = CLIENTS_INIT.map(c => c.name);
-
-  // Past 60 days — done
-  for (let d = -60; d < 0; d++) {
-    const ds = toDS(addDays(BASE_DATE, d));
-    if (parseDS(ds).getDay() === 0) continue;
-    const count = 3 + Math.abs(d % 5);
-    for (let i = 0; i < count; i++) {
-      list.push({
-        id: id++, date: ds,
-        time: HOURS[(2 + i * 3 + Math.abs(d)) % HOURS.length],
-        client: cn[(i + Math.abs(d) * 3) % 8],
-        service: services[(i * 2 + Math.abs(d)) % services.length],
-        barber: BARBERS[(i + Math.abs(d)) % 3],
-        status: "done", price: 0, paid: true,
-      });
-    }
+// Abre o checkout do plano alvo em nova aba. Recebe o id do plano ("pro" ou
+// "premium") e cai no link do Asaas. Fallback: se algum dia o link sair do ar
+// ou o id for inválido, abre WhatsApp manual pra não deixar o cliente sem
+// caminho de pagamento.
+function openCheckout(planId, shopId) {
+  const plan = PLANS[planId];
+  // Se temos link do Asaas, vai direto pro checkout. Anexamos `?ref=<shopId>`
+  // como referência externa — o Asaas guarda esse valor e ele aparece no
+  // webhook (Fase 2) e no painel admin, facilitando reconciliar quem pagou
+  // qual assinatura.
+  if (plan && plan.checkoutUrl) {
+    const sep = plan.checkoutUrl.includes("?") ? "&" : "?";
+    const url = shopId ? plan.checkoutUrl + sep + "externalReference=" + encodeURIComponent(shopId) : plan.checkoutUrl;
+    window.open(url, "_blank", "noopener,noreferrer");
+    return;
   }
-
-  // Today
-  const tf = [
-    ["08:00",0,0,0,"done"], ["08:30",1,2,1,"done"], ["09:00",2,0,0,"done"], ["09:30",3,3,2,"done"],
-    ["10:00",4,0,0,"confirmed"], ["10:30",5,2,1,"confirmed"], ["11:00",6,1,2,"pending"],
-    ["14:00",1,0,2,"confirmed"], ["14:30",2,2,0,"confirmed"], ["15:00",3,0,1,"pending"], ["16:00",7,3,0,"pending"],
-  ];
-  tf.forEach(([t, ci, si, bi, st]) => {
-    list.push({ id: id++, date: TODAY_DS, time: t, client: cn[ci], service: services[si], barber: BARBERS[bi], status: st, paid: st === "done" });
-  });
-
-  // Next 90 days
-  for (let d = 1; d <= 90; d++) {
-    const ds = toDS(addDays(BASE_DATE, d));
-    const dow = parseDS(ds).getDay();
-    if (dow === 0) continue;
-    const count = dow === 6 ? 8 : 3 + (d % 4);
-    for (let i = 0; i < count; i++) {
-      const st = d <= 7 ? "confirmed" : (d <= 30 && i % 3 === 0) ? "pending" : "confirmed";
-      list.push({
-        id: id++, date: ds,
-        time: HOURS[(2 + i * 3 + d) % HOURS.length],
-        client: cn[(i + d * 2) % 8],
-        service: services[(i * 2 + d) % services.length],
-        barber: BARBERS[(i + d) % 3],
-        status: st, paid: false,
-      });
-    }
-  }
-  return list;
-}
-
-function seedTransactions(services) {
-  const list = []; const methods = ["Pix", "Cartão", "Dinheiro"]; let id = 1;
-  for (let d = 90; d >= 0; d--) {
-    const ds = toDS(addDays(BASE_DATE, -d));
-    if (parseDS(ds).getDay() === 0) continue;
-    const n = 3 + (d % 5);
-    for (let i = 0; i < n; i++) {
-      const svc = services[i % Math.min(4, services.length)];
-      const barber = BARBERS[i % 3];
-      const commissionAmount = +(svc.price * barber.commission / 100).toFixed(2);
-      list.push({
-        id: id++, date: ds,
-        desc: svc.name + " - " + ["João","Pedro","Lucas","Marcos","André"][i % 5],
-        amount: svc.price, method: methods[i % 3],
-        barber: barber.name, barberId: barber.id,
-        out: false,
-        commissionPct: barber.commission,
-        commissionAmount,
-      });
-    }
-    if (d % 28 === 0) list.push({ id: id++, date: ds, desc: "Aluguel", amount: 2500, method: "Pix", barber: "-", out: true });
-    if (d % 10 === 0) list.push({ id: id++, date: ds, desc: "Reposição produtos", amount: 180 + (d % 7) * 20, method: "Pix", barber: "-", out: true });
-  }
-  return list;
+  // Fallback: WhatsApp manual
+  const planName = plan ? plan.name : "Pro";
+  const msg = encodeURIComponent("Olá! Quero fazer upgrade pro plano " + planName + " do Fadein.");
+  window.open("https://wa.me/?text=" + msg, "_blank", "noopener,noreferrer");
 }
 
 function getAvailableSlots(appts, date, barberId, duration) {
@@ -524,6 +568,25 @@ function Logo({ scale = 1 }) {
         <tspan dx="3" fill={C.goldBright}>IN</tspan>
       </text>
     </svg>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOADING SCREEN — usado durante boot do app e na página pública /agendar/...
+// ═══════════════════════════════════════════════════════════════════════════
+// Animação staircase: as 5 barras do logo sobem uma após a outra (degraus
+// crescentes), constróem o logo Fadein, e somem na mesma ordem antes do ciclo
+// recomeçar. Sem barulho visual — entrega refinada, premium, sem pressa.
+function LoadingScreen({ message = "Carregando" }) {
+  return (
+    <div className="loading-screen">
+      <div className="loading-bars" aria-hidden="true">
+        <span /><span /><span /><span /><span />
+      </div>
+      <div className="loading-brand">FADE<b>IN</b></div>
+      <div className="loading-rule" aria-hidden="true" />
+      <p className="loading-message">{message}</p>
+    </div>
   );
 }
 
@@ -834,6 +897,17 @@ function Login({ onLogin }) {
   const [show, setShow]   = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Se o usuário chegou via link de indicação (`?ref=<uuid>`), o boot já gravou
+  // o uid do indicador no localStorage. Mostra banner celebratório e abre na
+  // aba "Criar conta" — o objetivo da indicação é converter visitante em conta.
+  const wasReferred = (() => {
+    try { return typeof window !== "undefined" && !!localStorage.getItem(REFERRAL_KEY); }
+    catch { return false; }
+  })();
+  useEffect(() => {
+    if (wasReferred) setTab("signup");
+  }, [wasReferred]);
+
   async function attempt() {
     const e = email.trim().toLowerCase();
     if (!e) { setErr("Informe o email."); return; }
@@ -902,6 +976,33 @@ function Login({ onLogin }) {
         <p style={{ color: C.fgMuted, fontSize: 13, textAlign: "center", marginBottom: 24 }}>
           Sistema de gestão para barbearias
         </p>
+
+        {/* Banner de boas-vindas pro indicado: confirma que o desconto vai ser
+            aplicado quando ele criar a conta. O processamento financeiro fica
+            por conta do admin (manual, olhando referred_by no Supabase). */}
+        {wasReferred && (
+          <div style={{
+            background: "linear-gradient(135deg, " + C.goldDim + " 0%, " + C.goldFaint + " 100%)",
+            border: "1px solid " + C.goldBright + "40", borderRadius: 12,
+            padding: "14px 16px", marginBottom: 22,
+            display: "flex", alignItems: "center", gap: 12,
+          }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: "50%",
+              background: C.goldBright + "25", color: C.goldBright,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 18, flexShrink: 0,
+            }}>🎁</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.goldBright, marginBottom: 2 }}>
+                Você foi indicado!
+              </div>
+              <div style={{ fontSize: 11, color: C.fgMuted, lineHeight: 1.4 }}>
+                Ganhe <b style={{ color: C.fg }}>50% off no primeiro mês</b> ao criar sua conta.
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={{ display: "flex", marginBottom: 20, borderBottom: "1px solid " + C.border }}>
           {tabBtn("login", "Entrar")}
@@ -1962,22 +2063,26 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
             {!dateIsPast && <Btn sm onClick={openNew} icon={Ic.plus}>Criar primeiro</Btn>}
           </div>
         ) : shown.map(a => {
-          const isDone   = a.status === "done";
+          const isDone      = a.status === "done";
+          const isCancelled = a.status === "cancelled";
+          const isToday     = a.date === TODAY_DS;
           const isPaid   = a.paid;
           const statusBg = a.status === "pending"   ? C.amberDim
                          : a.status === "confirmed" ? C.goldDim
                          : a.status === "done"      ? C.greenDim
+                         : a.status === "cancelled" ? C.redDim
                          : C.bgSunken;
           const statusFg = a.status === "pending"   ? C.amber
                          : a.status === "confirmed" ? C.goldBright
                          : a.status === "done"      ? C.green
+                         : a.status === "cancelled" ? C.red
                          : C.fgMuted;
           return (
             <div key={a.id} style={{
               display: "flex", alignItems: "stretch", gap: 0,
               background: C.card, border: "1px solid " + C.border, borderRadius: 12,
               overflow: "hidden", transition: "border-color 0.15s, transform 0.15s",
-              opacity: isDone ? 0.78 : 1,
+              opacity: isDone ? 0.78 : isCancelled ? 0.55 : 1,
             }}>
               {/* Faixa do barbeiro (esquerda) */}
               <div style={{ width: 5, background: a.barber.color, flexShrink: 0 }} />
@@ -2048,19 +2153,28 @@ function Agenda({ appts, setAppts, services, clients, setClients, setTxns, barbe
                   {a.status === "done" ? "✓ Feito"
                     : a.status === "confirmed" ? "● Confirmado"
                     : a.status === "pending" ? "○ Pendente"
+                    : a.status === "cancelled" ? "✕ Cancelado"
                     : a.status}
                 </span>
-                {/* Ações */}
+                {/* Ações
+                   Regras:
+                   - Cancelado: nenhum botão (estado final, não recebe pagamento)
+                   - Concluído com valor pago: mostra o valor verde no lugar dos botões
+                   - Data passada: nenhum botão (cliente já passou)
+                   - Caso normal: 3 botões (confirmar se pendente, editar, excluir)
+                   - Receber (💰): SÓ aparece no dia do corte (data === hoje),
+                     porque não faz sentido receber pagamento de algo que ainda
+                     não aconteceu */}
                 {isDone && a.paidAmount ? (
                   <span style={{ fontSize: 12, color: C.green, fontWeight: 700, fontVariantNumeric: "tabular-nums" }} title={"Pago via " + a.paidMethod}>
                     +{fmtMoney(a.paidAmount)}
                   </span>
-                ) : !dateIsPast && (
+                ) : (!isDone && !isCancelled && !dateIsPast) && (
                   <div style={{ display: "flex", gap: 4 }}>
+                    {isToday && <Btn sm v="primary" onClick={() => markDone(a.id)} title="Concluir e receber">💰</Btn>}
                     {a.status === "pending" && <Btn sm v="success" onClick={() => confirmIt(a.id)} title="Confirmar">{Ic.check}</Btn>}
-                    {!isDone && <Btn sm v="primary" onClick={() => markDone(a.id)} title="Concluir e receber">💰</Btn>}
-                    {!isDone && <Btn sm v="ghost" onClick={() => openEdit(a)} title="Editar">{Ic.edit}</Btn>}
-                    {!isDone && <Btn sm v="danger" onClick={() => setConfirming(a)} title="Cancelar">{Ic.trash}</Btn>}
+                    <Btn sm v="ghost" onClick={() => openEdit(a)} title="Editar">{Ic.edit}</Btn>
+                    <Btn sm v="danger" onClick={() => setConfirming(a)} title="Cancelar">{Ic.trash}</Btn>
                   </div>
                 )}
               </div>
@@ -2308,6 +2422,22 @@ function Financeiro({ txns, setTxns, navigate, createTxn, deleteTxn }) {
   const [hov, setHov]       = useState(null);
   const [form, setForm]     = useState({ desc: "", amount: "", method: "Pix", out: false });
 
+  // Detecta mobile pra ajustar viewBox do gráfico (mesma estratégia do Dashboard)
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 768px)");
+    const onChange = (e) => setIsMobile(e.matches);
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else mq.addListener(onChange);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", onChange);
+      else mq.removeListener(onChange);
+    };
+  }, []);
+
   const startDs = period === "today" ? TODAY_DS : toDS(addDays(BASE_DATE, period === "week" ? -7 : -30));
   const filtered = txns
     .filter(t => t.date >= startDs)
@@ -2323,28 +2453,45 @@ function Financeiro({ txns, setTxns, navigate, createTxn, deleteTxn }) {
       const ds  = toDS(addDays(BASE_DATE, -i));
       const inc = txns.filter(t => t.date === ds && !t.out).reduce((s, t) => s + t.amount, 0);
       const out = txns.filter(t => t.date === ds &&  t.out).reduce((s, t) => s + t.amount, 0);
-      arr.push({ ds, inc, out, label: fmtWeekday(ds) });
+      // Em "30 dias" mostra dia/mês curto; em "7 dias" mostra dia da semana
+      const label = period === "week"
+        ? fmtWeekday(ds)
+        : period === "today"
+        ? "Hoje"
+        : fmtShort(ds);
+      arr.push({ ds, inc, out, balance: inc - out, label });
     }
     return arr;
-  }, [period, txns]);
+  }, [period, txns, days]);
 
-  const maxInc  = Math.max(...daily.map(p => Math.max(p.inc, p.out)), 1);
-  const SVG_W   = 600, SVG_H = 130;
-  const padding = 14;
+  // Escala do eixo Y: pega o maior valor entre entradas e saídas
+  const maxVal = Math.max(...daily.map(p => Math.max(p.inc, p.out)), 1);
+  // Picos de cada série (pra destacar)
+  const peakInIdx  = daily.reduce((b, p, i, a) => p.inc > a[b].inc ? i : b, 0);
+  const peakOutIdx = daily.reduce((b, p, i, a) => p.out > a[b].out ? i : b, 0);
+  // Saldo médio do período
+  const avgBalance = daily.length > 0
+    ? daily.reduce((s, p) => s + p.balance, 0) / daily.length
+    : 0;
 
-  const incPts = daily.map((p, i) => {
-    const x = padding + (i / (daily.length - 1 || 1)) * (SVG_W - padding * 2);
-    const y = SVG_H - padding - (p.inc / maxInc) * (SVG_H - padding * 2);
-    return x.toFixed(1) + "," + y.toFixed(1);
-  }).join(" ");
+  // Dimensões responsivas — desktop panorâmico, mobile mais quadrado
+  // (same pattern do gráfico do Dashboard)
+  const SVG_W = isMobile ? 380 : 900;
+  const SVG_H = isMobile ? 280 : 280;
+  const PAD_X = 36;
+  const PAD_T = 16;
+  const PAD_B = 24;
 
-  const outPts = daily.map((p, i) => {
-    const x = padding + (i / (daily.length - 1 || 1)) * (SVG_W - padding * 2);
-    const y = SVG_H - padding - (p.out / maxInc) * (SVG_H - padding * 2);
-    return x.toFixed(1) + "," + y.toFixed(1);
-  }).join(" ");
+  // Coordenadas dos pontos de cada série
+  const xAt = (i) => PAD_X + (i / Math.max(daily.length - 1, 1)) * (SVG_W - PAD_X * 2);
+  const yAt = (val) => PAD_T + (1 - val / maxVal) * (SVG_H - PAD_T - PAD_B);
 
-  const areaPts = padding + "," + (SVG_H - padding) + " " + incPts + " " + (SVG_W - padding) + "," + (SVG_H - padding);
+  const incPts = daily.map((p, i) => ({ x: xAt(i), y: yAt(p.inc), ...p }));
+  const outPts = daily.map((p, i) => ({ x: xAt(i), y: yAt(p.out), ...p }));
+
+  const incLine = incPts.map((p, i) => (i === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ");
+  const outLine = outPts.map((p, i) => (i === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ");
+  const incArea = incLine + " L" + (SVG_W - PAD_X) + " " + (SVG_H - PAD_B) + " L" + PAD_X + " " + (SVG_H - PAD_B) + " Z";
 
   const byMethod = {};
   filtered.filter(t => !t.out).forEach(t => { byMethod[t.method] = (byMethod[t.method] || 0) + t.amount; });
@@ -2390,64 +2537,281 @@ function Financeiro({ txns, setTxns, navigate, createTxn, deleteTxn }) {
         <KPI label="Saldo"    value={fmtMoney(totalIn - totalOut)} note={totalIn >= totalOut ? "positivo" : "negativo"} up={totalIn >= totalOut} accent />
       </div>
 
-      <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 14, padding: "20px 24px", marginBottom: 16 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-          <span style={{ fontSize: 11, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>
-            Fluxo de caixa
-          </span>
-          <div style={{ display: "flex", gap: 14, fontSize: 11 }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 10, height: 3, background: C.green, borderRadius: 2 }} />
-              <span style={{ color: C.fgMuted }}>Entradas:</span>
-              <b style={{ color: C.green }}>{fmtMoney(totalIn)}</b>
-            </span>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 10, height: 0, borderTop: "2px dashed " + C.red }} />
-              <span style={{ color: C.fgMuted }}>Saídas:</span>
-              <b style={{ color: C.red }}>{fmtMoney(totalOut)}</b>
-            </span>
+      <div style={{
+        background: C.card, border: "1px solid " + C.border, borderRadius: 14,
+        padding: "20px 24px", marginBottom: 16,
+        boxShadow: "0 1px 0 " + C.borderHi + " inset",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 11, color: C.fgMuted, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>
+              Fluxo de caixa
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: totalIn >= totalOut ? C.green : C.red, marginTop: 4, fontVariantNumeric: "tabular-nums", letterSpacing: -0.3 }}>
+              {totalIn >= totalOut ? "+" : ""}{fmtMoney(totalIn - totalOut)}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+              <span style={{ width: 8, height: 8, background: C.green, borderRadius: 2 }} />
+              <span style={{ color: C.fgMuted }}>Entradas</span>
+              <b style={{ color: C.green, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(totalIn)}</b>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+              <span style={{ width: 8, height: 8, background: C.red, borderRadius: 2 }} />
+              <span style={{ color: C.fgMuted }}>Saídas</span>
+              <b style={{ color: C.red, fontVariantNumeric: "tabular-nums" }}>{fmtMoney(totalOut)}</b>
+            </div>
           </div>
         </div>
 
-        <svg width="100%" viewBox={"0 0 " + SVG_W + " " + SVG_H} style={{ display: "block", overflow: "visible" }}>
-          <defs>
-            <linearGradient id="incArea" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%"   stopColor={C.green} stopOpacity="0.4" />
-              <stop offset="100%" stopColor={C.green} stopOpacity="0.0" />
-            </linearGradient>
-          </defs>
-          {[0.25, 0.5, 0.75].map(f => (
-            <line key={f} x1={padding} y1={padding + (SVG_H - padding * 2) * f} x2={SVG_W - padding} y2={padding + (SVG_H - padding * 2) * f}
-              stroke={C.border} strokeWidth="1" strokeDasharray="3 3" opacity="0.6" />
-          ))}
-          {daily.length > 1 && (
-            <>
-              <polygon points={areaPts} fill="url(#incArea)" />
-              <polyline points={incPts} fill="none" stroke={C.green} strokeWidth="2" strokeLinejoin="round" />
-              <polyline points={outPts} fill="none" stroke={C.red} strokeWidth="1.6" strokeLinejoin="round" strokeDasharray="4 3" />
-            </>
-          )}
-          {daily.map((p, i) => {
-            const cx = padding + (i / (daily.length - 1 || 1)) * (SVG_W - padding * 2);
-            const cy = SVG_H - padding - (p.inc / maxInc) * (SVG_H - padding * 2);
-            const isHov = hov === i;
-            return (
-              <g key={i} style={{ cursor: "pointer" }}
-                 onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)}>
-                <rect x={cx - 15} y={0} width={30} height={SVG_H} fill="transparent" />
-                <circle cx={cx} cy={cy} r={isHov ? 5 : 3} fill={C.green} stroke={C.bgSunken} strokeWidth="2" />
-                {isHov && (
-                  <g>
-                    <rect x={cx - 50} y={cy - 44} width={100} height={36} rx="6"
-                      fill={C.card2} stroke={C.borderHi} />
-                    <text x={cx} y={cy - 30} textAnchor="middle" fontSize="9" fill={C.fgMuted}>{p.label}</text>
-                    <text x={cx} y={cy - 18} textAnchor="middle" fontSize="11" fill={C.green} fontWeight="700">↑ {fmtMoney(p.inc)}</text>
-                  </g>
-                )}
-              </g>
-            );
-          })}
-        </svg>
+        <div className="dashboard-chart-wrap" style={{ position: "relative" }}>
+          <svg
+            width="100%"
+            viewBox={"0 0 " + SVG_W + " " + SVG_H}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ display: "block", width: "100%", overflow: "visible" }}
+          >
+            <defs>
+              {/* Gradients ricos (3 stops) pra entradas e saídas */}
+              <linearGradient id="finIncArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor={C.green} stopOpacity="0.42" />
+                <stop offset="55%"  stopColor={C.green} stopOpacity="0.10" />
+                <stop offset="100%" stopColor={C.green} stopOpacity="0" />
+              </linearGradient>
+              <linearGradient id="finOutArea" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor={C.red} stopOpacity="0.30" />
+                <stop offset="100%" stopColor={C.red} stopOpacity="0" />
+              </linearGradient>
+              <linearGradient id="finIncLine" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#7DD894" />
+                <stop offset="100%" stopColor={C.green} />
+              </linearGradient>
+              <linearGradient id="finOutLine" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#F08585" />
+                <stop offset="100%" stopColor={C.red} />
+              </linearGradient>
+              <filter id="finGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+
+            {/* Grid horizontal — 4 linhas de referência */}
+            {[0, 0.25, 0.5, 0.75, 1].map(f => {
+              const y = PAD_T + f * (SVG_H - PAD_T - PAD_B);
+              return (
+                <line key={f}
+                  x1={PAD_X} y1={y} x2={SVG_W - PAD_X} y2={y}
+                  stroke={C.border} strokeWidth="1"
+                  strokeDasharray={f === 1 ? "0" : "2 4"}
+                  opacity={f === 1 ? 0.7 : 0.32}
+                />
+              );
+            })}
+
+            {/* Labels do eixo Y — discretos à esquerda */}
+            {[1, 0.5, 0].map(f => {
+              const y = PAD_T + (1 - f) * (SVG_H - PAD_T - PAD_B);
+              const value = maxVal * f;
+              const label = value >= 1000 ? "R$" + Math.round(value / 100) / 10 + "k" : "R$" + Math.round(value);
+              return (
+                <text key={f}
+                  x={PAD_X - 6} y={y + 3}
+                  textAnchor="end" fontSize="10"
+                  fill={C.muted}
+                  fontFamily="ui-monospace, monospace"
+                >{label}</text>
+              );
+            })}
+
+            {daily.length > 1 && (
+              <>
+                {/* Áreas — entrada por baixo, saída por cima com transparência */}
+                <path d={incArea} fill="url(#finIncArea)" />
+                {/* Saída como path linha + área menor (não vai até 0, fica como "sombra") */}
+                {(() => {
+                  const outArea = outLine + " L" + (SVG_W - PAD_X) + " " + (SVG_H - PAD_B) + " L" + PAD_X + " " + (SVG_H - PAD_B) + " Z";
+                  return <path d={outArea} fill="url(#finOutArea)" />;
+                })()}
+                {/* Linhas — entrada sólida, saída sólida (não tracejada — fica mais legível) */}
+                <path d={incLine} fill="none" stroke="url(#finIncLine)" strokeWidth={isMobile ? "2.6" : "2.2"} strokeLinejoin="round" strokeLinecap="round" />
+                <path d={outLine} fill="none" stroke="url(#finOutLine)" strokeWidth={isMobile ? "2" : "1.8"} strokeLinejoin="round" strokeLinecap="round" />
+              </>
+            )}
+
+            {/* Destaque do pico de entradas (anel + glow verde) */}
+            {daily.length > 1 && daily[peakInIdx]?.inc > 0 && (() => {
+              const p = incPts[peakInIdx];
+              return (
+                <g>
+                  <circle cx={p.x} cy={p.y} r="9" fill="none" stroke={C.green} strokeWidth="1" opacity="0.4" />
+                  <circle cx={p.x} cy={p.y} r="5" fill={C.green} filter="url(#finGlow)" opacity="0.9" />
+                </g>
+              );
+            })()}
+            {/* Destaque do pico de saídas (anel vermelho mais sutil) */}
+            {daily.length > 1 && daily[peakOutIdx]?.out > 0 && peakOutIdx !== peakInIdx && (() => {
+              const p = outPts[peakOutIdx];
+              return (
+                <circle cx={p.x} cy={p.y} r="4.5" fill={C.red} stroke={C.card} strokeWidth="1.5" />
+              );
+            })()}
+
+            {/* Pontos + interação */}
+            {daily.map((p, i) => {
+              const isHov  = hov === i;
+              const isLast = i === daily.length - 1;
+              const isPeakIn  = i === peakInIdx  && p.inc > 0;
+              const isPeakOut = i === peakOutIdx && p.out > 0;
+              const ip = incPts[i], op = outPts[i];
+              return (
+                <g key={p.ds}
+                   style={{ cursor: "pointer" }}
+                   onMouseEnter={() => setHov(i)}
+                   onMouseLeave={() => setHov(null)}
+                   onTouchStart={() => setHov(i)}>
+                  {/* hit area */}
+                  <rect x={ip.x - (isMobile ? 18 : 14)} y={0}
+                        width={isMobile ? 36 : 28} height={SVG_H} fill="transparent" />
+                  {/* ponto entrada (não desenha se já é o pico destacado) */}
+                  {!isPeakIn && p.inc > 0 && (
+                    <circle cx={ip.x} cy={ip.y}
+                      r={isHov || isLast ? 4 : 2.5}
+                      fill={isLast ? C.green : C.card}
+                      stroke={C.green}
+                      strokeWidth={isLast ? 0 : 1.6}
+                    />
+                  )}
+                  {/* ponto saída */}
+                  {!isPeakOut && p.out > 0 && (
+                    <circle cx={op.x} cy={op.y}
+                      r={isHov ? 3.5 : 2.2}
+                      fill={C.card}
+                      stroke={C.red}
+                      strokeWidth="1.5"
+                    />
+                  )}
+                  {/* "agora" pulsando no último ponto se há entrada hoje */}
+                  {isLast && p.inc > 0 && (
+                    <circle cx={ip.x} cy={ip.y} r="9" fill={C.green} opacity="0.25" className="pulse" />
+                  )}
+                  {/* tooltip rico: data + entrada + saída + saldo */}
+                  {isHov && (p.inc > 0 || p.out > 0) && (() => {
+                    const tipW = isMobile ? 140 : 130;
+                    const tipH = 68;
+                    const anchorY = Math.min(ip.y, op.y || ip.y);
+                    const tipX = Math.max(PAD_X, Math.min(SVG_W - PAD_X - tipW, ip.x - tipW / 2));
+                    const tipY = Math.max(PAD_T, anchorY - tipH - 10);
+                    const balanceColor = p.balance >= 0 ? C.green : C.red;
+                    return (
+                      <g pointerEvents="none">
+                        <rect x={tipX} y={tipY} width={tipW} height={tipH} rx="8"
+                          fill={C.bgSunken} stroke={C.borderHi} strokeWidth="1" />
+                        <text x={tipX + 10} y={tipY + 14} fontSize="9" fill={C.fgMuted}
+                              fontWeight="600" textTransform="uppercase" letterSpacing="0.5">{p.label}</text>
+                        {/* Entrada */}
+                        <circle cx={tipX + 12} cy={tipY + 28} r="3" fill={C.green} />
+                        <text x={tipX + 20} y={tipY + 31} fontSize="10" fill={C.fgMuted}>Entrada</text>
+                        <text x={tipX + tipW - 10} y={tipY + 31} textAnchor="end"
+                              fontSize="11" fill={C.green} fontWeight="700"
+                              fontFamily="ui-monospace, monospace">{fmtMoney(p.inc)}</text>
+                        {/* Saída */}
+                        <circle cx={tipX + 12} cy={tipY + 44} r="3" fill={C.red} />
+                        <text x={tipX + 20} y={tipY + 47} fontSize="10" fill={C.fgMuted}>Saída</text>
+                        <text x={tipX + tipW - 10} y={tipY + 47} textAnchor="end"
+                              fontSize="11" fill={C.red} fontWeight="700"
+                              fontFamily="ui-monospace, monospace">{fmtMoney(p.out)}</text>
+                        {/* Saldo */}
+                        <line x1={tipX + 8} y1={tipY + 54} x2={tipX + tipW - 8} y2={tipY + 54}
+                              stroke={C.border} strokeWidth="1" />
+                        <text x={tipX + 10} y={tipY + 64} fontSize="10" fill={C.fgMuted} fontWeight="600">Saldo</text>
+                        <text x={tipX + tipW - 10} y={tipY + 64} textAnchor="end"
+                              fontSize="11" fill={balanceColor} fontWeight="700"
+                              fontFamily="ui-monospace, monospace">{p.balance >= 0 ? "+" : ""}{fmtMoney(p.balance)}</text>
+                      </g>
+                    );
+                  })()}
+                </g>
+              );
+            })}
+
+            {/* Labels do eixo X */}
+            {daily.map((p, i) => {
+              const targetCount = isMobile ? 4 : 7;
+              const show = period === "week"
+                ? true
+                : period === "today"
+                ? true
+                : (i % Math.ceil(daily.length / targetCount) === 0 || i === daily.length - 1);
+              if (!show) return null;
+              return (
+                <text key={p.ds + "-l"}
+                  x={xAt(i)} y={SVG_H - 6}
+                  textAnchor="middle"
+                  fontSize={isMobile ? "10" : "9"}
+                  fill={C.fgMuted}
+                  fontWeight="500"
+                >{p.label}</text>
+              );
+            })}
+          </svg>
+        </div>
+
+        {/* Resumo abaixo do chart: melhor dia / pior dia / saldo médio */}
+        {daily.length > 1 && (
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)",
+            gap: 8,
+            marginTop: 14,
+            paddingTop: 14,
+            borderTop: "1px solid " + C.border,
+          }}>
+            <div>
+              <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                Melhor dia
+              </div>
+              <div style={{ fontSize: 14, color: C.green, fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+                {fmtMoney(daily[peakInIdx]?.inc || 0)}
+              </div>
+              <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>
+                {daily[peakInIdx]?.label || "—"}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                Maior gasto
+              </div>
+              <div style={{ fontSize: 14, color: C.red, fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+                {fmtMoney(daily[peakOutIdx]?.out || 0)}
+              </div>
+              <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>
+                {(daily[peakOutIdx]?.out || 0) > 0 ? daily[peakOutIdx]?.label : "—"}
+              </div>
+            </div>
+            {!isMobile && (
+              <div>
+                <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>
+                  Saldo médio / dia
+                </div>
+                <div style={{
+                  fontSize: 14,
+                  color: avgBalance >= 0 ? C.fg : C.red,
+                  fontWeight: 700, fontVariantNumeric: "tabular-nums", lineHeight: 1.2,
+                }}>
+                  {avgBalance >= 0 ? "+" : ""}{fmtMoney(avgBalance)}
+                </div>
+                <div style={{ fontSize: 10, color: C.fgMuted, marginTop: 2 }}>
+                  {daily.length} dias analisados
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginTop: 16, paddingTop: 16, borderTop: "1px solid " + C.border }}>
           {(() => {
@@ -3174,14 +3538,7 @@ function PublicBooking({ slug }) {
     </div>
   );
 
-  if (loading || checkingExisting) return (
-    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ textAlign: "center" }}>
-        <Logo scale={1.2} />
-        <p style={{ color: C.fgMuted, fontSize: 13, marginTop: 20 }} className="pulse">Carregando agendamento…</p>
-      </div>
-    </div>
-  );
+  if (loading || checkingExisting) return <LoadingScreen message="Carregando agendamento" />;
 
   // Trial da barbearia expirou (ou cancelaram) — não pode receber novos agendamentos
   if (isShopBlocked(shop)) return <ShopUnavailable shopName={shop?.name} />;
@@ -3500,9 +3857,215 @@ function PublicBooking({ slug }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// REFERRAL CARD — "Indique e ganhe 1 mês grátis"
+// ═══════════════════════════════════════════════════════════════════════════
+// Cada barbearia vira vendedora: copia o link, manda no zap, e ganha 1 mês
+// grátis pra cada barbearia que assinar pela indicação. O indicado ganha 50%
+// off no 1º mês. Aqui só renderizamos UI + carregamos contadores; o crédito
+// efetivo é processado manualmente no painel admin do Supabase com base na
+// coluna `referred_by` da tabela `shops`.
+//
+// Fluxo:
+//   1. Indicador copia o link `https://<host>/?ref=<shop.id>` daqui ou
+//      compartilha pelo WhatsApp com mensagem pré-formatada.
+//   2. Indicado clica → boot do app captura `?ref=` em localStorage.
+//   3. Indicado cria conta → insert de shop grava `referred_by`.
+//   4. Admin cruza referred_by + subscription_status pra liberar os meses.
+function ReferralCard({ shop }) {
+  const [referrals, setReferrals] = useState({ total: 0, active: 0, loading: true, error: false });
+  const [copied, setCopied]       = useState(false);
+
+  // URL do link: usa o origin atual (funciona em dev local, fadein.app, app
+  // móvel embedado em webview, etc) + o shop.id como código.
+  const origin = (typeof window !== "undefined" && window.location.origin)
+    ? window.location.origin
+    : "https://fadein.app";
+  const link = origin + "/?ref=" + shop.id;
+
+  // Mensagem padrão do WhatsApp — escrita em primeira pessoa pra parecer real
+  // recomendação, não anúncio. CTA claro no final.
+  const waMessage = (
+    "Oi! Tô usando o Fadein pra gerenciar minha barbearia (" + (shop.name || "") + ") e tá " +
+    "ajudando demais — agenda, link de agendamento online, financeiro, comissões dos barbeiros, " +
+    "tudo num lugar só. Se você criar conta pelo meu link, ganha 50% off no primeiro mês: " + link
+  );
+  const waUrl = "https://wa.me/?text=" + encodeURIComponent(waMessage);
+
+  // Carrega contagem de indicações. Se a coluna `referred_by` ainda não existir
+  // no banco (migration não rodada), o erro é capturado e mostramos um estado
+  // informativo em vez de derrubar o card inteiro.
+  useEffect(() => {
+    if (!shop?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        // Total: qualquer barbearia que apontou pra esse shop como referrer
+        const totalQ = await supabase.from("shops")
+          .select("id", { count: "exact", head: true })
+          .eq("referred_by", shop.id);
+        if (totalQ.error) throw totalQ.error;
+
+        // Convertidas: indicações que viraram assinatura ativa (são essas que
+        // dão direito ao mês grátis pro indicador).
+        const activeQ = await supabase.from("shops")
+          .select("id", { count: "exact", head: true })
+          .eq("referred_by", shop.id)
+          .eq("subscription_status", "active");
+        if (activeQ.error) throw activeQ.error;
+
+        if (!cancelled) {
+          setReferrals({
+            total: totalQ.count || 0,
+            active: activeQ.count || 0,
+            loading: false, error: false,
+          });
+        }
+      } catch (e) {
+        console.warn("[fadein] referral stats error (coluna referred_by existe no banco?):", e?.message);
+        if (!cancelled) setReferrals({ total: 0, active: 0, loading: false, error: true });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [shop?.id]);
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Fallback pra browsers sem clipboard API: seleciona o input
+      const input = document.getElementById("referral-link-input");
+      if (input) { input.select(); document.execCommand && document.execCommand("copy"); }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    }
+  }
+
+  return (
+    <div style={{
+      // Mesmo gradiente discreto do plano premium pra dar peso visual ao card
+      // sem competir com a CTA de upgrade ali em cima.
+      background: "linear-gradient(135deg, " + C.card + " 0%, " + C.card2 + " 100%)",
+      border: "1px solid " + C.goldBright + "30", borderRadius: 12, padding: 20,
+      position: "relative", overflow: "hidden",
+    }}>
+      {/* Halo dourado discreto no canto pra dar identidade premium */}
+      <div style={{
+        position: "absolute", top: -40, right: -40, width: 140, height: 140,
+        borderRadius: "50%", background: C.goldFaint, pointerEvents: "none",
+      }} />
+
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14, position: "relative", marginBottom: 16 }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: 12,
+          background: C.goldDim, color: C.goldBright,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 22, flexShrink: 0,
+        }}>🎁</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: C.goldBright, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+            Programa de indicação
+          </div>
+          <h3 style={{ fontSize: 17, fontWeight: 700, color: C.fg, margin: 0, fontFamily: "Georgia, serif", letterSpacing: -0.3 }}>
+            Indique e ganhe 1 mês grátis
+          </h3>
+          <p style={{ fontSize: 12, color: C.fgMuted, margin: "6px 0 0", lineHeight: 1.5 }}>
+            Pra cada barbearia que assinar pelo seu link, você ganha <b style={{ color: C.fg }}>1 mês grátis</b>.
+            E quem entrar ganha <b style={{ color: C.fg }}>50% off no primeiro mês</b>.
+          </p>
+        </div>
+      </div>
+
+      {/* Link copiável */}
+      <div style={{
+        display: "flex", gap: 6, marginBottom: 10,
+        background: C.bgSunken, border: "1px solid " + C.border, borderRadius: 10,
+        padding: 4, position: "relative",
+      }}>
+        <input
+          id="referral-link-input"
+          readOnly value={link}
+          onFocus={e => e.target.select()}
+          style={{
+            flex: 1, minWidth: 0, padding: "8px 10px",
+            background: "transparent", border: "none", outline: "none",
+            color: C.fg, fontSize: 12, fontFamily: "ui-monospace, 'SF Mono', monospace",
+          }}
+        />
+        <button onClick={copyLink} title="Copiar link" style={{
+          padding: "0 14px", border: "none", borderRadius: 7,
+          background: copied ? C.green : C.goldBright,
+          color: copied ? "#fff" : "#1A1A1A",
+          fontSize: 12, fontWeight: 700, cursor: "pointer",
+          fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6,
+          minWidth: 90, justifyContent: "center",
+          transition: "background 0.18s",
+        }}>
+          {copied ? "✓ Copiado" : "📋 Copiar"}
+        </button>
+      </div>
+
+      {/* CTA principal: WhatsApp. É de longe o canal mais usado por barbeiros
+          pra recomendar coisas, então merece o destaque. */}
+      <a
+        href={waUrl} target="_blank" rel="noopener noreferrer"
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          width: "100%", padding: "12px 16px",
+          background: "#25D366", color: "#fff",
+          borderRadius: 10, textDecoration: "none",
+          fontSize: 14, fontWeight: 700, fontFamily: "inherit",
+          transition: "transform 0.1s, filter 0.15s",
+        }}
+        onMouseDown={e => e.currentTarget.style.transform = "scale(0.98)"}
+        onMouseUp={e => e.currentTarget.style.transform = "scale(1)"}
+        onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
+      >
+        <span style={{ fontSize: 16 }}>📱</span>
+        Compartilhar no WhatsApp
+      </a>
+
+      {/* Stats: total de cliques que viraram conta + quantos já assinaram */}
+      <div style={{
+        marginTop: 16, paddingTop: 14, borderTop: "1px solid " + C.border,
+        display: "flex", gap: 14,
+      }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: C.fg, fontFamily: "Georgia, serif", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+            {referrals.loading ? "—" : referrals.total}
+          </div>
+          <div style={{ fontSize: 10, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.6, marginTop: 6 }}>
+            indica{referrals.total === 1 ? "ção" : "ções"}
+          </div>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: C.green, fontFamily: "Georgia, serif", lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>
+            {referrals.loading ? "—" : referrals.active}
+          </div>
+          <div style={{ fontSize: 10, color: C.fgMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.6, marginTop: 6 }}>
+            mês{referrals.active === 1 ? "" : "es"} ganho{referrals.active === 1 ? "" : "s"}
+          </div>
+        </div>
+      </div>
+
+      {referrals.error && (
+        <div style={{
+          marginTop: 12, padding: "8px 10px",
+          background: C.amberDim, border: "1px solid " + C.amber + "30",
+          borderRadius: 8, fontSize: 11, color: C.amber, lineHeight: 1.4,
+        }}>
+          ⚠ Não consegui carregar as estatísticas. Verifique se a coluna <code>referred_by</code> existe na tabela <code>shops</code>.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // UPGRADE VIEW — bloqueio premium com call to action
 // ═══════════════════════════════════════════════════════════════════════════
-function UpgradeView({ feature, plan, navigate }) {
+function UpgradeView({ feature, plan, navigate, shopId }) {
   const featureLabels = {
     financeiro: { title: "Financeiro completo", desc: "Controle todas as entradas e saídas, receita por método de pagamento, e relatórios mensais." },
     comissoes:  { title: "Comissões automáticas", desc: "Cálculo automático da comissão de cada barbeiro a cada atendimento concluído. Fim das planilhas." },
@@ -3548,6 +4111,7 @@ function UpgradeView({ feature, plan, navigate }) {
             "Agenda + link de agendamento online",
             "Financeiro completo com gráficos",
             "Comissões automáticas por barbeiro",
+            "Relatórios mensais detalhados",
             "Até 3 barbeiros",
             "Suporte via WhatsApp",
             "Cancele quando quiser",
@@ -3565,10 +4129,7 @@ function UpgradeView({ feature, plan, navigate }) {
         </div>
 
         <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-          <Btn onClick={() => {
-            const msg = encodeURIComponent("Olá! Quero fazer upgrade pro plano " + planInfo.name + " do Fadein.");
-            window.open("https://wa.me/?text=" + msg, "_blank");
-          }}>Quero fazer upgrade</Btn>
+          <Btn onClick={() => openCheckout(recommended, shopId)}>Quero fazer upgrade</Btn>
           <Btn v="ghost" onClick={() => navigate("dashboard")}>Voltar ao dashboard</Btn>
         </div>
 
@@ -4232,11 +4793,6 @@ function TrialBanner({ shop }) {
               : days === 1 ? "Seu trial termina amanhã"
               : "Faltam " + days + " dias do seu trial";
 
-  function openWhats() {
-    const msg = encodeURIComponent("Olá! Quero assinar o Fadein.");
-    window.open("https://wa.me/?text=" + msg, "_blank");
-  }
-
   return (
     <div style={{
       background: bg, border: "1px solid " + border, borderRadius: 10,
@@ -4250,7 +4806,7 @@ function TrialBanner({ shop }) {
           Assine pra continuar usando sem interrupção.
         </span>
       </div>
-      <button onClick={openWhats} style={{
+      <button onClick={() => openCheckout("pro", shop?.id)} style={{
         background: fg, color: "#1A1A1A", border: "none",
         padding: "7px 14px", borderRadius: 7, fontSize: 12, fontWeight: 700,
         cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
@@ -4262,14 +4818,8 @@ function TrialBanner({ shop }) {
 }
 
 // Tela cheia que substitui o app quando trial expirou (ou assinatura cancelada).
-// Único caminho daqui é assinar (CTA WhatsApp por enquanto — quando integrar
-// Mercado Pago, troca pro fluxo de checkout).
+// Único caminho daqui é assinar — abre direto o checkout do Asaas.
 function TrialExpired({ shop, onLogout }) {
-  function openWhats() {
-    const msg = encodeURIComponent("Olá! Meu trial do Fadein acabou e quero assinar.");
-    window.open("https://wa.me/?text=" + msg, "_blank");
-  }
-
   const isExpired   = shop?.subscriptionStatus === "expired" || daysUntil(shop?.trialEndsAt) === 0;
   const isCancelled = shop?.subscriptionStatus === "cancelled";
 
@@ -4326,12 +4876,23 @@ function TrialExpired({ shop, onLogout }) {
           </ul>
         </div>
 
-        <button onClick={openWhats} style={{
+        {/* Dois botões: Pro como CTA principal (mais barato, mais conversão),
+            Premium como secundário pra quem precisa do recurso completo */}
+        <button onClick={() => openCheckout("pro", shop?.id)} style={{
           width: "100%", background: C.goldBright, color: "#1A1A1A", border: "none",
           padding: "13px 20px", borderRadius: 10, fontSize: 14, fontWeight: 700,
+          cursor: "pointer", fontFamily: "inherit", marginBottom: 8,
+        }}>
+          Assinar Pro · R$ 99/mês
+        </button>
+
+        <button onClick={() => openCheckout("premium", shop?.id)} style={{
+          width: "100%", background: "transparent", color: C.goldBright,
+          border: "1px solid " + C.goldBright + "60",
+          padding: "11px 20px", borderRadius: 10, fontSize: 13, fontWeight: 600,
           cursor: "pointer", fontFamily: "inherit", marginBottom: 10,
         }}>
-          Assinar agora
+          Assinar Premium · R$ 179/mês
         </button>
 
         <button onClick={onLogout} style={{
@@ -4745,15 +5306,15 @@ function Config({ shop, services, setServices, onLogout, barbers, addBarber, upd
               </div>
               <div style={{ fontSize: 12, color: C.fgMuted, marginTop: 6 }}>
                 {shop.plan === "starter" && "Agenda + link de agendamento. Até 1 barbeiro."}
-                {shop.plan === "pro"     && "Tudo do Starter + Financeiro + Comissões. Até 3 barbeiros."}
+                {shop.plan === "pro"     && "Tudo do Starter + Financeiro + Comissões + Relatórios. Até 3 barbeiros."}
                 {shop.plan === "premium" && "Tudo do Pro + barbeiros ilimitados + multi-unidade."}
               </div>
             </div>
             {shop.plan !== "premium" && (
               <Btn sm onClick={() => {
-                const next = shop.plan === "starter" ? "Pro" : "Premium";
-                const msg = encodeURIComponent("Olá! Quero fazer upgrade pro plano " + next + " do Fadein.");
-                window.open("https://wa.me/?text=" + msg, "_blank");
+                // Starter sobe pra Pro; Pro sobe pra Premium
+                const nextPlanId = shop.plan === "starter" ? "pro" : "premium";
+                openCheckout(nextPlanId, shop.id);
               }}>
                 Fazer upgrade
               </Btn>
@@ -4788,6 +5349,11 @@ function Config({ shop, services, setServices, onLogout, barbers, addBarber, upd
           )}
         </div>
 
+        {/* Programa de indicação: cada barbearia vira vendedora.
+            Posicionado logo após o card de plano por estar conectado à
+            economia da assinatura (ganhar mês grátis). */}
+        <ReferralCard shop={shop} />
+
         <div style={{ background: C.card, border: "1px solid " + C.border, borderRadius: 12, padding: 20 }}>
           <h3 style={{ fontSize: 14, fontWeight: 600, color: C.fg, margin: "0 0 14px" }}>Dados da barbearia</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -4813,8 +5379,9 @@ function Config({ shop, services, setServices, onLogout, barbers, addBarber, upd
               const reached = barbers.length >= max;
               return reached ? (
                 <Btn sm v="ghost" onClick={() => {
-                  const msg = encodeURIComponent("Olá! Quero adicionar mais barbeiros — preciso fazer upgrade do plano.");
-                  window.open("https://wa.me/?text=" + msg, "_blank");
+                  // Starter (1 barbeiro) → Pro; Pro (3 barbeiros) → Premium
+                  const nextPlanId = shop.plan === "starter" ? "pro" : "premium";
+                  openCheckout(nextPlanId, shop.id);
                 }}>🔒 Limite atingido</Btn>
               ) : (
                 <Btn sm icon={Ic.plus} onClick={openNewBarber}>Novo barbeiro</Btn>
@@ -4999,6 +5566,13 @@ export default function App() {
   const [txns,     setTxns]     = useState([]); // carregado do Supabase
   const [hydrated, setHydrated] = useState(false);
 
+  // Guarda o uid da sessão atual entre renders. Serve pra distinguir um login
+  // novo (uid diferente do anterior) de um SIGNED_IN espúrio do Supabase
+  // (refresh de token, retorno de aba/PWA do background, INITIAL_SESSION em
+  // alguns navegadores). Sem isso, o app voltava pra dashboard toda vez que
+  // a sessão era reidratada — o que quebra a navegação do usuário.
+  const prevUidRef = useRef(null);
+
   // Paleta de cores para barbeiros (cíclica) — visual idêntico ao mock anterior
   const BARBER_PALETTE = ["#E0B445", "#5A9BE2", "#5BAF6F", "#E27E5A", "#9B6FD4", "#D45A8A"];
   const enrichBarber = (b, idx) => ({
@@ -5014,14 +5588,12 @@ export default function App() {
       p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
     ]);
     try {
-      console.log("[fadein] loading barbers…");
       const { data, error } = await withTimeout(
         supabase.from("barbers").select("*").eq("shop_id", shopId).eq("active", true).order("created_at"),
         8000, "select barbers"
       );
       if (error) { console.error("[fadein] barbers error:", error); return; }
       const enriched = (data || []).map((b, i) => enrichBarber(b, i));
-      console.log("[fadein] barbers loaded:", enriched.length);
       setBarbersState(enriched);
     } catch (e) { console.error("[fadein] loadBarbers fatal:", e?.message || e); }
   }, []);
@@ -5085,7 +5657,6 @@ export default function App() {
       p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
     ]);
     try {
-      console.log("[fadein] loading appts…");
       // Janela: últimos 60 dias + próximos 30 dias (suficiente para a UI)
       const today = new Date();
       const from  = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 60).toISOString();
@@ -5101,7 +5672,6 @@ export default function App() {
       );
       if (error) { console.error("[fadein] appts error:", error); return; }
       const list = (data || []).map(r => dbRowToAppt(r, barbersList));
-      console.log("[fadein] appts loaded:", list.length);
       setAppts(list);
     } catch (e) { console.error("[fadein] loadAppts fatal:", e?.message || e); }
   }, [dbRowToAppt]);
@@ -5175,14 +5745,12 @@ export default function App() {
       p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
     ]);
     try {
-      console.log("[fadein] loading clients…");
       const { data, error } = await withTimeout(
         supabase.from("clients").select("*").eq("shop_id", shopId).order("name"),
         8000, "select clients"
       );
       if (error) { console.error("[fadein] clients error:", error); return; }
       setClients((data || []).map(dbRowToClient));
-      console.log("[fadein] clients loaded:", data?.length || 0);
     } catch (e) { console.error("[fadein] loadClients fatal:", e?.message || e); }
   }, [dbRowToClient]);
 
@@ -5292,7 +5860,6 @@ export default function App() {
       p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
     ]);
     try {
-      console.log("[fadein] loading txns…");
       const today = new Date();
       const from  = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 90).toISOString().slice(0, 10);
       const { data, error } = await withTimeout(
@@ -5301,7 +5868,6 @@ export default function App() {
       );
       if (error) { console.error("[fadein] txns error:", error); return; }
       setTxns((data || []).map(r => dbRowToTxn(r, barbersList)));
-      console.log("[fadein] txns loaded:", data?.length || 0);
     } catch (e) { console.error("[fadein] loadTxns fatal:", e?.message || e); }
   }, [dbRowToTxn]);
 
@@ -5331,7 +5897,6 @@ export default function App() {
       p, new Promise((_, rej) => setTimeout(() => rej(new Error(`Timeout ${label}`)), ms)),
     ]);
     try {
-      console.log("[fadein] loading services…");
       const { data, error } = await withTimeout(
         supabase.from("services").select("*").eq("shop_id", shopId).eq("active", true).order("name"),
         8000, "select services"
@@ -5344,7 +5909,6 @@ export default function App() {
         duration: parseInt(r.duration) || 30,
       }));
       setServices(mapped);
-      console.log("[fadein] services loaded:", mapped.length);
     } catch (e) { console.error("[fadein] loadServices fatal:", e?.message || e); }
   }, []);
 
@@ -5386,7 +5950,6 @@ export default function App() {
 
   // ── Carrega shop do Supabase para um user_id ─────────────────────────────
   const loadShopForUser = useCallback(async (uid) => {
-    console.log("[fadein] loadShopForUser uid=", uid);
     if (!uid) { setShop(null); return; }
 
     // Helper: race contra timeout para detectar query travada
@@ -5396,12 +5959,10 @@ export default function App() {
     ]);
 
     try {
-      console.log("[fadein] querying shops…");
       const { data, error } = await withTimeout(
         supabase.from("shops").select("*").eq("user_id", uid).maybeSingle(),
         8000, "select shops"
       );
-      console.log("[fadein] shops result:", { data, error });
       if (error) { console.error("[fadein] shop error:", error); setShop(null); return; }
       if (data) {
         setShop({
@@ -5423,14 +5984,36 @@ export default function App() {
           trialEndsAt:        data.trial_ends_at || null,
           subscriptionStatus: data.subscription_status || "trial",
         });
-        console.log("[fadein] shop set:", data.name, "| plan:", data.plan || "starter");
       } else {
-        console.log("[fadein] no shop found, creating…");
-        const { data: created, error: cErr } = await withTimeout(
-          supabase.from("shops").insert({ user_id: uid, name: "Minha Barbearia", plan: "starter" }).select().maybeSingle(),
-          8000, "insert shops"
-        );
-        console.log("[fadein] create result:", { created, cErr });
+        // Primeira entrada da barbearia: cria registro em shops.
+        // Se chegou via link de indicação (`?ref=<uuid>` capturado no boot),
+        // tenta gravar `referred_by` apontando pro indicador. Como a coluna
+        // pode não existir ainda no banco (migration não rodada), faz fallback
+        // pro insert "puro" pra não bloquear o cadastro.
+        const referredBy = (typeof window !== "undefined") ? localStorage.getItem(REFERRAL_KEY) : null;
+        const baseInsert = { user_id: uid, name: "Minha Barbearia", plan: "starter" };
+
+        let created = null;
+        if (referredBy) {
+          const r1 = await withTimeout(
+            supabase.from("shops").insert({ ...baseInsert, referred_by: referredBy }).select().maybeSingle(),
+            8000, "insert shops com referral"
+          );
+          if (!r1.error) {
+            created = r1.data;
+            try { localStorage.removeItem(REFERRAL_KEY); } catch {}
+          } else {
+            console.warn("[fadein] insert com referred_by falhou, tentando sem:", r1.error?.message);
+          }
+        }
+        if (!created) {
+          const r2 = await withTimeout(
+            supabase.from("shops").insert(baseInsert).select().maybeSingle(),
+            8000, "insert shops"
+          );
+          created = r2.data;
+        }
+
         if (created) setShop({
           id: created.id, name: created.name, address: "", color: "#C9982A",
           plan: "starter", slug: slugify(created.name || ""),
@@ -5448,34 +6031,46 @@ export default function App() {
 
   // ── Boot: verifica sessão atual + listener de auth ───────────────────────
   useEffect(() => {
-    console.log("[fadein] boot: starting…");
     let active = true;
     (async () => {
       try {
-        console.log("[fadein] getting session…");
         const { data: { session } } = await supabase.auth.getSession();
-        console.log("[fadein] session:", session?.user?.id || "(none)");
         if (!active) return;
-        await loadShopForUser(session?.user?.id);
+        const uid = session?.user?.id || null;
+        // Marca o uid já no boot pra que o SIGNED_IN que o Supabase dispara
+        // logo em seguida (com o mesmo usuário) seja reconhecido como sessão
+        // já existente, e não como login novo.
+        prevUidRef.current = uid;
+        await loadShopForUser(uid);
       } catch (e) { console.error("[fadein] boot error:", e); }
-      finally { if (active) { setAuthReady(true); console.log("[fadein] authReady=true"); } }
+      finally { if (active) { setAuthReady(true); } }
     })();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log("[fadein] auth event:", event, session?.user?.id || "(none)");
       if (event === "PASSWORD_RECOVERY") {
         setRecoveryMode(true);
         return;
       }
-      if (event === "SIGNED_OUT") { setShop(null); setHydrated(false); setRecoveryMode(false); return; }
-      // IMPORTANTE: só recarrega shop e reseta pra dashboard em SIGNED_IN de verdade.
-      // Eventos TOKEN_REFRESHED / INITIAL_SESSION / USER_UPDATED disparam sozinhos
-      // (renovação de token a cada ~1h, foco na aba, etc) e estavam fazendo o app
-      // voltar pra dashboard sem o usuário pedir.
+      if (event === "SIGNED_OUT") {
+        prevUidRef.current = null;
+        setShop(null); setHydrated(false); setRecoveryMode(false);
+        return;
+      }
+      // O Supabase dispara SIGNED_IN não só no login real, mas também em:
+      //   - reidratação da sessão (foco da aba, PWA voltando do background)
+      //   - INITIAL_SESSION em alguns navegadores
+      //   - depois de um TOKEN_REFRESHED em determinadas versões
+      // Por isso só consideramos "login novo" quando o uid mudou. Caso contrário
+      // ignoramos: o usuário continua na página em que estava (não é mais
+      // jogado pra dashboard quando volta pra aba).
       if (event === "SIGNED_IN") {
-        await loadShopForUser(session?.user?.id);
-        setPage("dashboard");
-        setHydrated(false);
+        const newUid = session?.user?.id || null;
+        if (newUid && newUid !== prevUidRef.current) {
+          prevUidRef.current = newUid;
+          await loadShopForUser(newUid);
+          setPage("dashboard");
+          setHydrated(false);
+        }
       }
     });
 
@@ -5531,18 +6126,24 @@ export default function App() {
         } catch (e) { console.error("[fadein] realtime payload error:", e); }
       })
       .subscribe((status) => {
-        console.log("[fadein] realtime channel status:", status);
       });
     return () => { supabase.removeChannel(channel); };
   }, [shop?.id, barbers, dbRowToAppt]);
 
   // ── Refresh ao voltar pra aba: garante consistência mesmo se o realtime cair ──
+  // Com throttle de 30s pra evitar que o app fique recarregando agendamentos
+  // toda vez que o usuário troca rapidinho de aba (ou que iOS dispare
+  // visibilitychange várias vezes em sequência). O realtime já cobre o caso
+  // comum; isso aqui é só rede de segurança.
+  const lastRefreshRef = useRef(0);
   useEffect(() => {
     if (!shop?.id) return;
     const refresh = () => {
-      if (document.visibilityState === "visible") {
-        loadAppts(shop.id, barbers);
-      }
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastRefreshRef.current < 30000) return; // 30s throttle
+      lastRefreshRef.current = now;
+      loadAppts(shop.id, barbers);
     };
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
@@ -5604,12 +6205,7 @@ export default function App() {
   if (!authReady) return (
     <>
       <style>{GLOBAL_CSS}</style>
-      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ textAlign: "center" }}>
-          <Logo scale={1.2} />
-          <p style={{ color: C.fgMuted, fontSize: 13, marginTop: 20 }} className="pulse">Carregando...</p>
-        </div>
-      </div>
+      <LoadingScreen />
     </>
   );
 
@@ -5746,10 +6342,10 @@ export default function App() {
         {page === "agenda"     && <Agenda     appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} setTxns={setTxns} barbers={barbers} createAppt={createAppt} updateAppt={updateAppt} cancelAppt={cancelAppt} upsertClientFromAppt={upsertClientFromAppt} createTxn={createTxn} />}
         {page === "financeiro" && (hasFeature(shop.plan, "financeiro")
           ? <Financeiro txns={txns} setTxns={setTxns} navigate={setPage} createTxn={createTxn} deleteTxn={deleteTxn} />
-          : <UpgradeView feature="financeiro" plan={shop.plan} navigate={setPage} />)}
+          : <UpgradeView feature="financeiro" plan={shop.plan} navigate={setPage} shopId={shop.id} />)}
         {page === "comissoes"  && (hasFeature(shop.plan, "comissoes")
           ? <Comissoes txns={txns} appts={appts} services={services} setServices={setServices} barbers={barbers} />
-          : <UpgradeView feature="comissoes" plan={shop.plan} navigate={setPage} />)}
+          : <UpgradeView feature="comissoes" plan={shop.plan} navigate={setPage} shopId={shop.id} />)}
         {page === "clientes"   && <Clientes   clients={clients}   setClients={setClients}   appts={appts} navigate={setPage} barbers={barbers} createClient={createClient} updateClient={updateClient} deleteClient={deleteClient} />}
         {page === "link"       && <LinkAgendamento shop={shop} appts={appts} setAppts={setAppts} services={services} clients={clients} setClients={setClients} barbers={barbers} createAppt={createAppt} upsertClientFromAppt={upsertClientFromAppt} />}
         {page === "config"     && <Config     shop={shop} services={services} setServices={setServices} onLogout={() => supabase.auth.signOut()} barbers={barbers} addBarber={addBarber} updateBarber={updateBarber} deleteBarber={deleteBarber} createService={createService} updateService={updateService} deleteService={deleteService} updateShop={updateShop} />}

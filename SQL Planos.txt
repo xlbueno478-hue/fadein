@@ -1,0 +1,5 @@
+-- Substitua o UUID pelo externalReference que vai estar no painel do Asaas
+UPDATE shops 
+SET plan = 'pro',                -- ou 'premium'
+    subscription_status = 'active'
+WHERE id = '00000000-0000-0000-0000-000000000000';

@@ -97,7 +97,6 @@ const GLOBAL_CSS = `
      rodar, evitando o flash de conteúdo já posicionado. */
   @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
-  @keyframes slideUpSheet { from { transform: translateY(100%); } to { transform: translateY(0); } }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
   .fade-in { animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
   .slide-in { animation: slideIn 0.25s ease-out; }
@@ -553,7 +552,6 @@ const Ic = {
   eyeOpen:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/><circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.3"/></svg>,
   eyeShut:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1 8s2.5-5 7-5 7 5 7 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><path d="M3 11.5C4.3 10 6 9 8 9s3.7 1 5 2.5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/><line x1="3" y1="3" x2="13" y2="13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>,
   trendUp:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M1.5 11l4-4 3 3 6-6M10.5 4h4v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
-  more:      <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="4" cy="9" r="1.4" fill="currentColor"/><circle cx="9" cy="9" r="1.4" fill="currentColor"/><circle cx="14" cy="9" r="1.4" fill="currentColor"/></svg>,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -5627,10 +5625,6 @@ export default function App() {
   const [appts,    setAppts]    = useState([]); // carregado do Supabase
   const [txns,     setTxns]     = useState([]); // carregado do Supabase
   const [hydrated, setHydrated] = useState(false);
-  // Sheet "Mais" do bottom nav mobile — agrupa itens que não cabem na barra
-  // (Financeiro, Comissões, Link). Pro Starter funciona como vitrine de
-  // upgrade: mostra os itens bloqueados com cadeado dourado.
-  const [moreSheet, setMoreSheet] = useState(false);
 
   // Guarda o uid da sessão atual entre renders. Serve pra distinguir um login
   // novo (uid diferente do anterior) de um SIGNED_IN espúrio do Supabase
@@ -6421,184 +6415,16 @@ export default function App() {
         {page === "config"     && <Config     shop={shop} services={services} setServices={setServices} onLogout={() => supabase.auth.signOut()} barbers={barbers} addBarber={addBarber} updateBarber={updateBarber} deleteBarber={deleteBarber} createService={createService} updateService={updateService} deleteService={deleteService} updateShop={updateShop} />}
       </main>
 
-      {/* Bottom navigation mobile (4 itens principais + botão "Mais") */}
+      {/* Bottom navigation mobile (5 itens principais) */}
       <nav className="app-bottom-nav">
-        {NAV.filter(n => ["dashboard","agenda","clientes","config"].includes(n.id)).map(n => (
+        {NAV.filter(n => ["dashboard","agenda","link","clientes","config"].includes(n.id)).map(n => (
           <button key={n.id} onClick={() => setPage(n.id)} className={page === n.id ? "active" : ""}>
             {n.icon}
             <span>{n.label}</span>
           </button>
         ))}
-        {/* Botão Mais: abre bottom sheet com Financeiro / Comissões / Link.
-            Fica "ativo" quando a página atual está dentro do grupo do sheet,
-            pra dar feedback visual de onde o usuário está. */}
-        <button
-          onClick={() => setMoreSheet(true)}
-          className={["financeiro","comissoes","link"].includes(page) ? "active" : ""}
-        >
-          {Ic.more}
-          <span>Mais</span>
-        </button>
       </nav>
-
-      {/* Bottom sheet "Mais" — só renderiza quando aberto.
-          Lista Financeiro, Comissões e Link público. Pra Starter (trial), os
-          dois primeiros aparecem com cadeado dourado e ao tocar levam pra
-          tela de upgrade. Pra Pro/Premium aparecem normalmente. */}
-      {moreSheet && (
-        <MoreSheet
-          shop={shop}
-          currentPage={page}
-          onPick={(pageId) => { setPage(pageId); setMoreSheet(false); }}
-          onClose={() => setMoreSheet(false)}
-        />
-      )}
     </div>
-    </>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// MOBILE MORE SHEET — bottom sheet com itens secundários da nav
-// ═══════════════════════════════════════════════════════════════════════════
-// Abre por cima do bottom nav mobile quando o usuário toca em "Mais". Lista
-// Financeiro, Comissões e Link público — itens que não cabem na barra de 5
-// ícones mas precisam de acesso fácil.
-//
-// IMPORTANTE: pra Starter (trial), Financeiro e Comissões aparecem com cadeado
-// dourado e a label "Pro" — tocar leva pra tela de upgrade (UpgradeView, que
-// já tem o gating no <main>). Isso é decisão de design proposital: o sheet
-// vira uma vitrine de upgrade em vez de esconder essas features. O Starter
-// vê o que ele teria pagando.
-function MoreSheet({ shop, currentPage, onPick, onClose }) {
-  const planInfo = PLANS[shop.plan] || PLANS.starter;
-  const isTrial  = !!planInfo.trial;
-
-  const items = [
-    {
-      id: "financeiro",
-      label: "Financeiro",
-      icon: Ic.money,
-      desc: "Receita, despesas e gráficos",
-      feature: "financeiro",
-    },
-    {
-      id: "comissoes",
-      label: "Comissões",
-      icon: Ic.scissors,
-      desc: "Cálculo automático por barbeiro",
-      feature: "comissoes",
-    },
-    {
-      id: "link",
-      label: "Link público",
-      icon: Ic.link,
-      desc: "Compartilhe pra clientes agendarem",
-      feature: null, // sempre disponível
-    },
-  ];
-
-  return (
-    <>
-      {/* Overlay escuro tappável que fecha o sheet */}
-      <div
-        onClick={onClose}
-        style={{
-          position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
-          zIndex: 200, animation: "fadeIn 0.2s ease-out",
-        }}
-      />
-      {/* Sheet ancorado no rodapé. animação slide-up de baixo. */}
-      <div
-        role="dialog" aria-label="Mais opções"
-        style={{
-          position: "fixed", left: 0, right: 0, bottom: 0,
-          background: C.card, borderTop: "1px solid " + C.border,
-          borderRadius: "18px 18px 0 0",
-          zIndex: 201,
-          padding: "8px 12px calc(20px + env(safe-area-inset-bottom)) 12px",
-          animation: "slideUpSheet 0.28s cubic-bezier(0.16, 1, 0.3, 1)",
-          boxShadow: "0 -8px 32px rgba(0,0,0,0.4)",
-        }}
-      >
-        {/* Handle de drag visual (não funciona, é só indicação visual) */}
-        <div style={{
-          width: 38, height: 4, background: C.borderHi, borderRadius: 2,
-          margin: "0 auto 14px",
-        }} />
-
-        {/* Banner de upgrade pro Starter — explica POR QUE alguns itens estão bloqueados */}
-        {isTrial && (
-          <div style={{
-            background: "linear-gradient(135deg, " + C.goldDim + " 0%, " + C.goldFaint + " 100%)",
-            border: "1px solid " + C.goldBright + "30",
-            borderRadius: 10, padding: "10px 12px", marginBottom: 12,
-            display: "flex", alignItems: "center", gap: 10,
-          }}>
-            <span style={{ fontSize: 18 }}>✨</span>
-            <div style={{ fontSize: 12, color: C.fg, lineHeight: 1.4, flex: 1 }}>
-              <b style={{ color: C.goldBright }}>Pro · R$ 99/mês</b>{" "}
-              <span style={{ color: C.fgMuted }}>desbloqueia Financeiro, Comissões e Relatórios.</span>
-            </div>
-          </div>
-        )}
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {items.map(item => {
-            const locked   = item.feature && !hasFeature(shop.plan, item.feature);
-            const isActive = currentPage === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => onPick(item.id)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 14,
-                  width: "100%", padding: "14px 12px",
-                  background: isActive ? C.goldDim : "transparent",
-                  border: "none", borderRadius: 10,
-                  color: isActive ? C.goldBright : C.fg,
-                  fontFamily: "inherit", textAlign: "left",
-                  cursor: "pointer", minHeight: 60,
-                }}
-              >
-                {/* Bloco do ícone — quadrado colorido pra destacar */}
-                <div style={{
-                  width: 40, height: 40, borderRadius: 10,
-                  background: locked ? C.goldDim : isActive ? C.goldBright + "25" : C.bgSunken,
-                  color:      locked ? C.goldBright : isActive ? C.goldBright : C.fgMuted,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  flexShrink: 0,
-                }}>
-                  {item.icon}
-                </div>
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 14, fontWeight: 600,
-                    display: "flex", alignItems: "center", gap: 8,
-                  }}>
-                    {item.label}
-                    {locked && (
-                      <span style={{
-                        fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 4,
-                        background: C.goldDim, color: C.goldBright,
-                        textTransform: "uppercase", letterSpacing: 0.5,
-                      }}>Pro</span>
-                    )}
-                  </div>
-                  <div style={{
-                    fontSize: 11, color: C.fgMuted, marginTop: 2, lineHeight: 1.3,
-                  }}>{item.desc}</div>
-                </div>
-
-                {locked
-                  ? <span style={{ fontSize: 14, color: C.goldBright }}>🔒</span>
-                  : <span style={{ color: C.fgMuted, opacity: 0.6 }}>{Ic.chevR}</span>}
-              </button>
-            );
-          })}
-        </div>
-      </div>
     </>
   );
 }
